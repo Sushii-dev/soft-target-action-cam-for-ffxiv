@@ -7,7 +7,7 @@
     "Description": "GW2-style action camera: hold a key to capture the mouse, rotate the camera freely, auto-face your character, and soft-target the nearest enemy in view.",
     "ApplicableVersion": "any",
     "Tags": ["camera", "action", "targeting", "qol"],
-    "DalamudApiLevel": 12,
+    "DalamudApiLevel": 15,
     "DownloadCount": 0,
     "LastUpdate": 0,
     "IsHide": false,
