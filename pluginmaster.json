@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 {
   "Author": "grimgrum",
   "Name": "Action Camera",
@@ -20,3 +21,29 @@
   "DownloadLinkUpdate": "https://github.com/grimgrum/action-cam-for-ffxiv/releases/latest/download/latest.zip",
   "DownloadLinkTesting": "https://github.com/grimgrum/action-cam-for-ffxiv/releases/latest/download/latest.zip"
 }
+=======
+[
+  {
+    "Author": "grimgrum",
+    "Name": "Action Camera",
+    "InternalName": "ActionCamera",
+    "AssemblyVersion": "0.4.5.5",
+    "Description": "GW2-style action camera: hold a key to capture the mouse, rotate the camera freely, auto-face your character, and soft-target the nearest enemy in view.",
+    "ApplicableVersion": "any",
+    "Tags": [
+      "camera",
+      "action",
+      "targeting",
+      "qol"
+    ],
+    "DalamudApiLevel": 15,
+    "DownloadCount": 0,
+    "LastUpdate": 1777674475,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadLinkInstall": "https://github.com/grimgrum/action-cam-for-ffxiv/releases/latest/download/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/grimgrum/action-cam-for-ffxiv/releases/latest/download/latest.zip",
+    "DownloadLinkTesting": "https://github.com/grimgrum/action-cam-for-ffxiv/releases/latest/download/latest.zip"
+  }
+]
+>>>>>>> 69c3289 (fix: wrap pluginmaster.json in array for Dalamud compatibility)
