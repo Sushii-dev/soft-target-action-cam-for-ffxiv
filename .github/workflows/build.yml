@@ -30,6 +30,10 @@ jobs:
           echo "DALAMUD_HOME=$dir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
         shell: pwsh
 
+      - name: List Dalamud dev folder contents
+        run: Get-ChildItem "$env:DALAMUD_HOME" -Filter "*.dll" | Select-Object -ExpandProperty Name | Sort-Object
+        shell: pwsh
+
       - name: Restore
         run: dotnet restore ActionCamera.csproj
 

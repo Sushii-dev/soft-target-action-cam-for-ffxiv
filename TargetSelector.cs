@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
+using Dalamud.Game.ClientState.Objects;
 
 namespace ActionCamera;
 
@@ -79,7 +80,7 @@ public sealed class TargetSelector
         return bestObj;
     }
 
-    private static bool IsValidTarget(IGameObject obj, IPlayerCharacter localPlayer)
+    private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer)
     {
         // Skip the local player.
         if (obj.GameObjectId == localPlayer.GameObjectId) return false;

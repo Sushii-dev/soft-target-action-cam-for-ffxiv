@@ -23,20 +23,21 @@
   <ItemGroup>
     <!-- Packages the plugin DLL + manifest into bin\x64\{Config}\ActionCamera\ -->
     <PackageReference Include="DalamudPackager" Version="2.1.13" />
+    <!--
+      ImGui.NET is no longer shipped as a standalone DLL in the Dalamud 15.x dev
+      distribution, so we reference it via NuGet for compilation only.
+      PrivateAssets=all keeps it out of our zip; Dalamud supplies it at runtime.
+    -->
+    <PackageReference Include="ImGui.NET" Version="1.89.9.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>compile</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
     <!-- None of these ship inside the plugin zip — Dalamud provides them at runtime. -->
     <Reference Include="Dalamud">
       <HintPath>$(DalamudLibPath)Dalamud.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="ImGui.NET">
-      <HintPath>$(DalamudLibPath)ImGui.NET.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-    <Reference Include="ImGuiScene">
-      <HintPath>$(DalamudLibPath)ImGuiScene.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="FFXIVClientStructs">
