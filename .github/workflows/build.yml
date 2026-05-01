@@ -40,6 +40,10 @@ jobs:
       - name: Build (Release)
         run: dotnet build ActionCamera.csproj -c Release --no-restore -p:Platform=x64
 
+      - name: List build output
+        run: Get-ChildItem bin/x64/Release -Recurse -File | Select-Object -ExpandProperty FullName
+        shell: pwsh
+
       - name: Record artifact path
         id: paths
         run: echo "zip=bin/x64/Release/ActionCamera/latest.zip" >> $env:GITHUB_OUTPUT
@@ -49,8 +53,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ActionCamera
-          path: bin/x64/Release/ActionCamera/latest.zip
-          if-no-files-found: warn
+          path: bin/x64/Release/**/latest.zip
+          if-no-files-found: error
 
   release:
     needs: build
