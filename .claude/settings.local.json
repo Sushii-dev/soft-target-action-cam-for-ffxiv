@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git -C \"/var/home/bazzite/Repos/Action Cam/action-cam-for-FFXIV\" log --oneline -10)"
+      "Bash(git -C \"/var/home/bazzite/Repos/Action Cam/action-cam-for-FFXIV\" log --oneline -10)",
+      "WebFetch(domain:dalamud.dev)"
     ]
   }
 }
