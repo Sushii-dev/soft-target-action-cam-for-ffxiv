@@ -37,7 +37,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        targetSelector = new TargetSelector();
+        targetSelector = new TargetSelector(Configuration);
         cameraController = new CameraController(Configuration, targetSelector);
 
         ConfigWindow = new ConfigWindow(this);

@@ -11,19 +11,20 @@ namespace ActionCamera;
 /// </summary>
 public sealed class TargetSelector
 {
-    // How many frames between full object-table scans.
-    // Scanning every frame is cheap for small zone populations but this knob
-    // lets users trade latency for performance on crowded maps.
     private const int ScanIntervalFrames = 3;
     private int frameCounter;
+
+    private readonly Configuration config;
+
+    public TargetSelector(Configuration config)
+    {
+        this.config = config;
+    }
 
     public void Update(float cameraHRotation)
     {
         if (++frameCounter < ScanIntervalFrames) return;
         frameCounter = 0;
-
-        var config = Plugin.PluginInterface.GetPluginConfig() as Configuration
-                     ?? new Configuration();
 
         var best = FindBestTarget(cameraHRotation, config);
         if (best != null)
