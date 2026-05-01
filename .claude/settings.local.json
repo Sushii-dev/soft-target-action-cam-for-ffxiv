@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"/var/home/bazzite/Repos/Action Cam/action-cam-for-FFXIV\" log --oneline -10)"
+    ]
+  }
+}

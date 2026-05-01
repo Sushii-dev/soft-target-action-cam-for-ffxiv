@@ -40,7 +40,9 @@ jobs:
       - name: Build (Release)
         run: |
           $ref = "${{ github.ref_name }}"
-          if ($ref -match '^[vV]?(\d+)\.(\d+)\.(\d+)$') {
+          if ($ref -match '^[vV]?(\d+)\.(\d+)\.(\d+)\.(\d+)$') {
+            $asmVer = "$($matches[1]).$($matches[2]).$($matches[3]).$($matches[4])"
+          } elseif ($ref -match '^[vV]?(\d+)\.(\d+)\.(\d+)$') {
             $asmVer = "$($matches[1]).$($matches[2]).$($matches[3]).0"
           } else {
             $asmVer = "0.0.0.0"
@@ -88,7 +90,8 @@ jobs:
           $ts  = [int](Get-Date -UFormat %s)
 
           $json = Get-Content pluginmaster.json | ConvertFrom-Json
-          $json[0].AssemblyVersion = $ver + ".0"
+          $asmVer = if ($ver -match '^\d+\.\d+\.\d+\.\d+$') { $ver } else { "$ver.0" }
+          $json[0].AssemblyVersion = $asmVer
           $json[0].LastUpdate      = $ts
           $json | ConvertTo-Json -Depth 5 | Set-Content pluginmaster.json
 
