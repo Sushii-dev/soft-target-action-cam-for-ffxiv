@@ -12,8 +12,8 @@
     "LastUpdate": 0,
     "IsHide": false,
     "IsTestingExclusive": false,
-    "DownloadLinkInstall":  "http://localhost:8080/ActionCamera/latest.zip",
-    "DownloadLinkUpdate":   "http://localhost:8080/ActionCamera/latest.zip",
-    "DownloadLinkTesting":  "http://localhost:8080/ActionCamera/latest.zip"
+    "DownloadLinkInstall":  "https://github.com/grimgrum/action-cam-for-ffxiv/releases/latest/download/latest.zip",
+    "DownloadLinkUpdate":   "https://github.com/grimgrum/action-cam-for-ffxiv/releases/latest/download/latest.zip",
+    "DownloadLinkTesting":  "https://github.com/grimgrum/action-cam-for-ffxiv/releases/latest/download/latest.zip"
   }
 ]
