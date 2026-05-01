@@ -1,0 +1,19 @@
+[
+  {
+    "Author": "grimgrum",
+    "Name": "Action Camera",
+    "InternalName": "ActionCamera",
+    "AssemblyVersion": "1.0.0.0",
+    "Description": "GW2-style action camera: hold a key to capture the mouse, rotate the camera freely, auto-face your character, and soft-target the nearest enemy in view.",
+    "ApplicableVersion": "any",
+    "Tags": ["camera", "action", "targeting", "qol"],
+    "DalamudApiLevel": 12,
+    "DownloadCount": 0,
+    "LastUpdate": 0,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "DownloadLinkInstall":  "http://localhost:8080/ActionCamera/latest.zip",
+    "DownloadLinkUpdate":   "http://localhost:8080/ActionCamera/latest.zip",
+    "DownloadLinkTesting":  "http://localhost:8080/ActionCamera/latest.zip"
+  }
+]
