@@ -1,0 +1,8 @@
+{
+  "Author": "grimgrum",
+  "Name": "Action Camera",
+  "Punchline": "GW2-style action camera for FFXIV.",
+  "Description": "Provides a GW2-style action camera mode. Hold or toggle a configurable key to capture the mouse, freely rotate the camera with mouse movement, auto-face your character toward the camera, and automatically soft-target the nearest enemy in your field of view.",
+  "ApplicableVersion": "any",
+  "Tags": ["camera", "action", "targeting", "qol"]
+}
