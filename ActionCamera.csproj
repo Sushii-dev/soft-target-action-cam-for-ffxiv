@@ -21,23 +21,23 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Packages the plugin DLL + manifest into bin\x64\{Config}\ActionCamera\ -->
     <PackageReference Include="DalamudPackager" Version="2.1.13" />
-    <!--
-      ImGui.NET is no longer shipped as a standalone DLL in the Dalamud 15.x dev
-      distribution, so we reference it via NuGet for compilation only.
-      PrivateAssets=all keeps it out of our zip; Dalamud supplies it at runtime.
-    -->
-    <PackageReference Include="ImGui.NET" Version="1.89.9.1">
-      <PrivateAssets>all</PrivateAssets>
-      <IncludeAssets>compile</IncludeAssets>
-    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>
     <!-- None of these ship inside the plugin zip — Dalamud provides them at runtime. -->
     <Reference Include="Dalamud">
       <HintPath>$(DalamudLibPath)Dalamud.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Dalamud 15.x ships its own ImGui bindings DLL instead of ImGui.NET -->
+    <Reference Include="Dalamud.Bindings.ImGui">
+      <HintPath>$(DalamudLibPath)Dalamud.Bindings.ImGui.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <!-- Required companion to FFXIVClientStructs for CStringPointer etc. -->
+    <Reference Include="InteropGenerator.Runtime">
+      <HintPath>$(DalamudLibPath)InteropGenerator.Runtime.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="FFXIVClientStructs">

@@ -2,7 +2,6 @@ using System;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
-using Dalamud.Game.ClientState.Objects;
 
 namespace ActionCamera;
 
@@ -34,7 +33,7 @@ public sealed class TargetSelector
 
     private static IGameObject? FindBestTarget(float cameraYaw, Configuration config)
     {
-        var localPlayer = Plugin.ClientState.LocalPlayer;
+        var localPlayer = Plugin.ObjectTable.LocalPlayer;
         if (localPlayer == null) return null;
 
         var playerPos = localPlayer.Position;
@@ -82,22 +81,10 @@ public sealed class TargetSelector
 
     private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer)
     {
-        // Skip the local player.
         if (obj.GameObjectId == localPlayer.GameObjectId) return false;
-
-        // Only hostile battle NPCs.
         if (obj.ObjectKind != ObjectKind.BattleNpc) return false;
-
-        // Must be visible and targetable.
+        // IsTargetable is false for dead and un-targetable NPCs (includes most friendlies).
         if (!obj.IsTargetable) return false;
-
-        // IBattleNpc exposes SubKind; Enemy = hostile mob.
-        if (obj is IBattleNpc { BattleNpcKind: BattleNpcSubKind.Enemy } battleNpc)
-        {
-            if (battleNpc.CurrentHp == 0) return false;
-            return true;
-        }
-
-        return false;
+        return true;
     }
 }

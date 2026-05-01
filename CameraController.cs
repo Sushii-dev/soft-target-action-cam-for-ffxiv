@@ -156,7 +156,7 @@ public sealed unsafe class CameraController : IDisposable
 
     private void SetPlayerFacing(float cameraYaw)
     {
-        var localPlayer = Plugin.ClientState.LocalPlayer;
+        var localPlayer = Plugin.ObjectTable.LocalPlayer;
         if (localPlayer == null) return;
 
         // BattleChara* → Character → GameObject → Rotation (float, radians).
