@@ -132,12 +132,12 @@ public sealed unsafe class CameraController : IDisposable
         var hRot = (float*)(camBase + OffHRot);
         var vRot = (float*)(camBase + OffVRot);
 
-        *hRot += dx;
+        *hRot -= dx;
 
         // Wrap yaw to [-π, π] so it never drifts beyond those bounds.
         *hRot = WrapAngle(*hRot);
 
-        var newV = *vRot + (config.InvertY ? -dy : dy);
+        var newV = *vRot + (config.InvertY ? dy : -dy);
         *vRot = Math.Clamp(newV, config.MinVRotationOverride, config.MaxVRotationOverride);
 
         if (config.RotateCharacterWithCamera)
