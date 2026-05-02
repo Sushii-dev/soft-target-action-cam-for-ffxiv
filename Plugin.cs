@@ -16,6 +16,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IClientState ClientState { get; private set; } = null!;
     [PluginService] internal static IFramework Framework { get; private set; } = null!;
     [PluginService] internal static IObjectTable ObjectTable { get; private set; } = null!;
+    [PluginService] internal static ITargetManager TargetManager { get; private set; } = null!;
     [PluginService] internal static IKeyState KeyState { get; private set; } = null!;
     [PluginService] internal static IGamepadState GamepadState { get; private set; } = null!;
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
@@ -29,6 +30,7 @@ public sealed class Plugin : IDalamudPlugin
     private ConfigWindow ConfigWindow { get; init; }
 
     private readonly CameraController cameraController;
+    private readonly TargetSelector targetSelector;
 
     // True when the user wants action cam on (independent of menu suppression).
     private bool userWantsActive;
@@ -38,7 +40,8 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        cameraController = new CameraController(Configuration);
+        targetSelector = new TargetSelector(Configuration);
+        cameraController = new CameraController(Configuration, targetSelector);
 
         ConfigWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(ConfigWindow);
