@@ -63,12 +63,11 @@ public sealed unsafe class CameraController : IDisposable
 
         try
         {
-            // Function prologue signature sourced from SimpleTweaks' DisableMouseCameraControl.
-            // Points directly at GetCameraControlType, no call-site offset calculation needed.
-            var funcAddr = Plugin.SigScanner.ScanText(
-                "4C 8B DC 53 55 57 48 81 EC ?? ?? ?? ?? 48 8B 05 ?? ?? ?? ?? 48 33 C4 48 89 84 24 ?? ?? ?? ?? 48 8B 2D");
-            cameraControlHook = Plugin.GameInterop.HookFromAddress<GetCameraControlTypeDelegate>(
-                funcAddr, CameraControlTypeDetour);
+            // Same call-site signature used by SimpleTweaks' DisableMouseCameraControl.
+            // HookFromSignature resolves the relative CALL target internally, matching
+            // what Dalamud's [Signature] attribute does.
+            cameraControlHook = Plugin.GameInterop.HookFromSignature<GetCameraControlTypeDelegate>(
+                "E8 ?? ?? ?? ?? 83 F8 01 74 5F", CameraControlTypeDetour);
             cameraControlHook.Enable();
         }
         catch (Exception ex)
