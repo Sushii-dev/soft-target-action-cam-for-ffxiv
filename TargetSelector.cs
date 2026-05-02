@@ -2,7 +2,6 @@ using System;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
-using FFXIVClientStructs.FFXIV.Client.Game.Character;
 
 namespace ActionCamera;
 
@@ -80,13 +79,23 @@ public sealed class TargetSelector
         return bestObj;
     }
 
-    private static unsafe bool IsValidTarget(IGameObject obj, IGameObject localPlayer)
+    private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer)
     {
         if (obj.GameObjectId == localPlayer.GameObjectId) return false;
         if (obj.ObjectKind != ObjectKind.BattleNpc) return false;
         if (obj is not IBattleNpc npc || (byte)npc.BattleNpcKind != 5) return false;
-        if (!((BattleChara*)npc.Address)->Character.IsHostile) return false;
         if (!obj.IsTargetable) return false;
-        return true;
+        return IsTargetingParty(obj, localPlayer);
+    }
+
+    private static bool IsTargetingParty(IGameObject obj, IGameObject localPlayer)
+    {
+        var tid = obj.TargetObjectId;
+        // 0xE0000000 is the game's sentinel for "no target"
+        if (tid == 0 || tid == 0xE0000000) return false;
+        if (tid == localPlayer.GameObjectId) return true;
+        foreach (var member in Plugin.PartyList)
+            if (member.GameObject?.GameObjectId == tid) return true;
+        return false;
     }
 }
