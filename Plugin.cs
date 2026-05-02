@@ -1,8 +1,10 @@
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 using ActionCamera.Windows;
 
 namespace ActionCamera;
@@ -28,7 +30,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly CameraController cameraController;
 
-    // Debounce state for the toggle key
+    // True when the user wants action cam on (independent of menu suppression).
+    private bool userWantsActive;
     private bool toggleKeyWasDown;
 
     public Plugin()
@@ -67,13 +70,42 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!ClientState.IsLoggedIn)
         {
-            // If player logs out while action cam is active, deactivate cleanly.
             if (cameraController.IsActive) cameraController.Deactivate();
+            userWantsActive = false;
             return;
         }
 
         HandleToggleKey();
+        ReconcileActiveState();
         cameraController.Update();
+    }
+
+    // Separate user intent from actual state so menu suppression is transparent.
+    private void ReconcileActiveState()
+    {
+        var shouldBeActive = userWantsActive && !IsMenuOpen();
+        if (shouldBeActive && !cameraController.IsActive)
+            cameraController.Activate();
+        else if (!shouldBeActive && cameraController.IsActive)
+            cameraController.Deactivate();
+    }
+
+    private static unsafe bool IsMenuOpen()
+    {
+        // Scripted events, cutscenes, loading screens.
+        if (Condition[ConditionFlag.OccupiedInEvent]
+            || Condition[ConditionFlag.OccupiedInQuestEvent]
+            || Condition[ConditionFlag.OccupiedInCutSceneEvent]
+            || Condition[ConditionFlag.WatchingCutscene78]
+            || Condition[ConditionFlag.BetweenAreas])
+            return true;
+
+        // Any interactive window (inventory, character sheet, map, shop, etc.)
+        // sets FocusedAddon when open. Null means only the game world is active.
+        var stage = AtkStage.Instance();
+        if (stage == null) return false;
+        var unitManager = (AtkUnitManager*)stage->RaptureAtkUnitManager;
+        return unitManager != null && unitManager->FocusedAddon != null;
     }
 
     private void HandleToggleKey()
@@ -84,18 +116,12 @@ public sealed class Plugin : IDalamudPlugin
 
         if (Configuration.HoldToActivate)
         {
-            // Activate while held, deactivate on release.
-            if (isDown && !cameraController.IsActive) cameraController.Activate();
-            else if (!isDown && cameraController.IsActive) cameraController.Deactivate();
+            userWantsActive = isDown;
         }
         else
         {
-            // Toggle on leading edge of key press.
             if (isDown && !toggleKeyWasDown)
-            {
-                if (cameraController.IsActive) cameraController.Deactivate();
-                else cameraController.Activate();
-            }
+                userWantsActive = !userWantsActive;
             toggleKeyWasDown = isDown;
         }
     }
@@ -105,27 +131,19 @@ public sealed class Plugin : IDalamudPlugin
         switch (args.Trim().ToLowerInvariant())
         {
             case "on":
-                cameraController.Activate();
+                userWantsActive = true;
                 ChatGui.Print("[ActionCamera] Activated.");
                 break;
             case "off":
-                cameraController.Deactivate();
+                userWantsActive = false;
                 ChatGui.Print("[ActionCamera] Deactivated.");
                 break;
             case "config":
                 ConfigWindow.IsOpen = true;
                 break;
             default:
-                if (cameraController.IsActive)
-                {
-                    cameraController.Deactivate();
-                    ChatGui.Print("[ActionCamera] Deactivated.");
-                }
-                else
-                {
-                    cameraController.Activate();
-                    ChatGui.Print("[ActionCamera] Activated.");
-                }
+                userWantsActive = !userWantsActive;
+                ChatGui.Print(userWantsActive ? "[ActionCamera] Activated." : "[ActionCamera] Deactivated.");
                 break;
         }
     }
