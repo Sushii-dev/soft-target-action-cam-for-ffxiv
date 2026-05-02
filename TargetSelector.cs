@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
+using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
 
 namespace ActionCamera;
@@ -82,8 +83,9 @@ public sealed class TargetSelector
     private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer)
     {
         if (obj.GameObjectId == localPlayer.GameObjectId) return false;
-        if (obj.ObjectKind != ObjectKind.BattleNpc) return false;
-        // IsTargetable is false for dead and un-targetable NPCs (includes most friendlies).
+        // Exclude pets, companion chocobos, and other summoned friendlies — only actual enemies.
+        if (obj is not IBattleNpc { BattleNpcKind: BattleNpcSubKind.Enemy }) return false;
+        // IsTargetable is false for dead/untargetable NPCs.
         if (!obj.IsTargetable) return false;
         return true;
     }
