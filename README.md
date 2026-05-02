@@ -70,13 +70,6 @@ Open `/actioncam config` to adjust:
 | Angle weight | 2.0 | Higher = prefer centred targets; lower = prefer closer |
 | Min/max pitch | −83° / 37° | Vertical camera travel limits |
 
-### First-time calibration
-
-The first time you activate action camera, check which way your character faces:
-
-- **Character faces the same direction as the camera** — working correctly (default 180° offset)
-- **Character faces toward the camera lens** — set the Facing Offset slider to **0°** in the config window
-
 ---
 
 ## Building from source
