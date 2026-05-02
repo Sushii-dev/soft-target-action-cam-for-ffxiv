@@ -93,7 +93,7 @@ jobs:
           $asmVer = if ($ver -match '^\d+\.\d+\.\d+\.\d+$') { $ver } else { "$ver.0" }
           $json[0].AssemblyVersion = $asmVer
           $json[0].LastUpdate      = $ts
-          $json | ConvertTo-Json -Depth 5 | Set-Content pluginmaster.json
+          $json | ConvertTo-Json -Depth 5 -AsArray | Set-Content pluginmaster.json
 
           echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
         shell: pwsh
