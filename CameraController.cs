@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 
@@ -27,6 +28,20 @@ public sealed unsafe class CameraController : IDisposable
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hwnd, out RECT r);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hwnd, ref POINT p);
 
+    // ── Camera control hook ──────────────────────────────────────────────────
+
+    private enum CameraControlType { None, Keyboard, Gamepad, Mouse }
+    private delegate CameraControlType GetCameraControlTypeDelegate();
+    private readonly IHook<GetCameraControlTypeDelegate>? cameraControlHook;
+
+    private CameraControlType CameraControlTypeDetour()
+    {
+        var original = cameraControlHook!.Original();
+        if (isActive && original == CameraControlType.Mouse)
+            return CameraControlType.None;
+        return original;
+    }
+
     // ── State ────────────────────────────────────────────────────────────────
 
     private readonly Configuration config;
@@ -45,11 +60,27 @@ public sealed unsafe class CameraController : IDisposable
     {
         this.config = config;
         this.targetSelector = targetSelector;
+
+        try
+        {
+            // Signature from SimpleTweaks' DisableMouseCameraControl — finds the call site,
+            // so we resolve the relative offset to get the actual function address.
+            var callSite = Plugin.SigScanner.ScanText("E8 ?? ?? ?? ?? 83 F8 01 74 5F");
+            var funcAddr = callSite + 5 + *(int*)(callSite + 1);
+            cameraControlHook = Plugin.GameInterop.HookFromAddress<GetCameraControlTypeDelegate>(
+                funcAddr, CameraControlTypeDetour);
+            cameraControlHook.Enable();
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex, "[ActionCamera] Failed to hook GetCameraControlType.");
+        }
     }
 
     public void Dispose()
     {
         if (isActive) Deactivate();
+        cameraControlHook?.Dispose();
     }
 
     // ── Activation ───────────────────────────────────────────────────────────
