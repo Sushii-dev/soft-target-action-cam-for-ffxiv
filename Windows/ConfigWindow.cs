@@ -36,8 +36,6 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         DrawCharacterSection();
         ImGui.Separator();
-        DrawTargetingSection();
-        ImGui.Separator();
         DrawCameraLimitsSection();
     }
 
@@ -156,51 +154,6 @@ public sealed class ConfigWindow : Window, IDisposable
             Config.Save();
         }
         ImGui.TextDisabled("  Default 180°: character faces the same direction as the camera.");
-
-        ImGui.EndDisabled();
-    }
-
-    // ── Targeting ────────────────────────────────────────────────────────────
-
-    private void DrawTargetingSection()
-    {
-        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Auto-Targeting");
-        ImGui.Spacing();
-
-        var autoTarget = Config.AutoTarget;
-        if (ImGui.Checkbox("Soft-target nearest enemy in camera direction", ref autoTarget))
-        {
-            Config.AutoTarget = autoTarget;
-            Config.Save();
-        }
-
-        ImGui.BeginDisabled(!Config.AutoTarget);
-
-        var fov = Config.AutoTargetFovDegrees;
-        ImGui.SetNextItemWidth(200);
-        if (ImGui.SliderFloat("FOV cone (°)", ref fov, 5f, 90f, "%.0f°"))
-        {
-            Config.AutoTargetFovDegrees = fov;
-            Config.Save();
-        }
-        ImGui.TextDisabled("  Half-angle of the forward cone used for candidate search.");
-
-        var dist = Config.AutoTargetMaxDistance;
-        ImGui.SetNextItemWidth(200);
-        if (ImGui.SliderFloat("Max distance (y)", ref dist, 5f, 100f, "%.0fy"))
-        {
-            Config.AutoTargetMaxDistance = dist;
-            Config.Save();
-        }
-
-        var aw = Config.AutoTargetAngleWeight;
-        ImGui.SetNextItemWidth(200);
-        if (ImGui.SliderFloat("Angle weight", ref aw, 0.1f, 10f, "%.1f"))
-        {
-            Config.AutoTargetAngleWeight = aw;
-            Config.Save();
-        }
-        ImGui.TextDisabled("  Higher = prefer more-centred targets; lower = prefer closer.");
 
         ImGui.EndDisabled();
     }

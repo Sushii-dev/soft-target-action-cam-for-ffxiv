@@ -30,7 +30,6 @@ public sealed unsafe class CameraController : IDisposable
     // ── State ────────────────────────────────────────────────────────────────
 
     private readonly Configuration config;
-    private readonly TargetSelector targetSelector;
 
     private bool isActive;
     private bool cursorHidden;
@@ -41,10 +40,9 @@ public sealed unsafe class CameraController : IDisposable
 
     // ── Constructor / Dispose ────────────────────────────────────────────────
 
-    public CameraController(Configuration config, TargetSelector targetSelector)
+    public CameraController(Configuration config)
     {
         this.config = config;
-        this.targetSelector = targetSelector;
     }
 
     public void Dispose()
@@ -103,9 +101,6 @@ public sealed unsafe class CameraController : IDisposable
         SetCursorPos(screenCenter.X, screenCenter.Y);
 
         ApplyCameraRotation(dx, dy);
-
-        if (config.AutoTarget)
-            targetSelector.Update(GetCameraHRotation());
     }
 
     // ── Camera write ─────────────────────────────────────────────────────────
