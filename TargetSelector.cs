@@ -1,7 +1,6 @@
 using System;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
-using Dalamud.Game.ClientState.Objects.SubKinds;
 using Dalamud.Game.ClientState.Objects.Types;
 
 namespace ActionCamera;
@@ -83,8 +82,10 @@ public sealed class TargetSelector
     private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer)
     {
         if (obj.GameObjectId == localPlayer.GameObjectId) return false;
-        // Exclude pets, companion chocobos, and other summoned friendlies — only actual enemies.
-        if (obj is not IBattleNpc { BattleNpcKind: BattleNpcSubKind.Enemy }) return false;
+        if (obj.ObjectKind != ObjectKind.BattleNpc) return false;
+        // SubKind 5 is the game constant for hostile enemy NPCs.
+        // Other sub-kinds include pets (2), companion chocobos (3), and friendly NPCs (6).
+        if (obj is not IBattleNpc npc || (byte)npc.BattleNpcKind != 5) return false;
         // IsTargetable is false for dead/untargetable NPCs.
         if (!obj.IsTargetable) return false;
         return true;
