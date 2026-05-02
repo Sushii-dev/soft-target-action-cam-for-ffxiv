@@ -83,10 +83,8 @@ public sealed class TargetSelector
     {
         if (obj.GameObjectId == localPlayer.GameObjectId) return false;
         if (obj.ObjectKind != ObjectKind.BattleNpc) return false;
-        // SubKind 5 is the game constant for hostile enemy NPCs.
-        // Other sub-kinds include pets (2), companion chocobos (3), and friendly NPCs (6).
         if (obj is not IBattleNpc npc || (byte)npc.BattleNpcKind != 5) return false;
-        // IsTargetable is false for dead/untargetable NPCs.
+        if (!npc.IsHostile) return false;
         if (!obj.IsTargetable) return false;
         return true;
     }
