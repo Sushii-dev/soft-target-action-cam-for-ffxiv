@@ -32,7 +32,7 @@ public sealed unsafe class CameraController : IDisposable
 
     private enum CameraControlType { None, Keyboard, Gamepad, Mouse }
     private delegate CameraControlType GetCameraControlTypeDelegate();
-    private readonly IHook<GetCameraControlTypeDelegate>? cameraControlHook;
+    private readonly Hook<GetCameraControlTypeDelegate>? cameraControlHook;
 
     private CameraControlType CameraControlTypeDetour()
     {
