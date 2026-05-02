@@ -3,7 +3,7 @@
     "Author": "grimgrum",
     "Name": "Action Camera",
     "InternalName": "ActionCamera",
-    "AssemblyVersion": "0.5.6.1",
+    "AssemblyVersion": "0.5.6.2",
     "Description": "GW2-style action camera: hold a key to capture the mouse, rotate the camera freely, auto-face your character, and soft-target the nearest enemy in view.",
     "ApplicableVersion": "any",
     "Tags": [
@@ -14,7 +14,7 @@
     ],
     "DalamudApiLevel": 15,
     "DownloadCount": 0,
-    "LastUpdate": 1777738978,
+    "LastUpdate": 1777739887,
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadLinkInstall": "https://github.com/grimgrum/action-cam-for-ffxiv/releases/latest/download/latest.zip",
