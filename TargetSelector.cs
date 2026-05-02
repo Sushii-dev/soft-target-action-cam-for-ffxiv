@@ -2,6 +2,7 @@ using System;
 using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
+using FFXIVClientStructs.FFXIV.Client.Game.Character;
 
 namespace ActionCamera;
 
@@ -79,12 +80,12 @@ public sealed class TargetSelector
         return bestObj;
     }
 
-    private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer)
+    private static unsafe bool IsValidTarget(IGameObject obj, IGameObject localPlayer)
     {
         if (obj.GameObjectId == localPlayer.GameObjectId) return false;
         if (obj.ObjectKind != ObjectKind.BattleNpc) return false;
         if (obj is not IBattleNpc npc || (byte)npc.BattleNpcKind != 5) return false;
-        if (!npc.IsHostile) return false;
+        if (!((BattleChara*)npc.Address)->Character.IsHostile) return false;
         if (!obj.IsTargetable) return false;
         return true;
     }
