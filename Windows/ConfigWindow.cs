@@ -170,7 +170,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Spacing();
 
         var autoTarget = Config.AutoTarget;
-        if (ImGui.Checkbox("Soft-target nearest enemy in camera direction", ref autoTarget))
+        if (ImGui.Checkbox("Auto-target nearest enemy in camera direction", ref autoTarget))
         {
             Config.AutoTarget = autoTarget;
             Config.Save();

@@ -28,7 +28,7 @@ public sealed class TargetSelector
 
         var best = FindBestTarget(cameraHRotation, config);
         if (best != null)
-            Plugin.TargetManager.SoftTarget = best;
+            Plugin.TargetManager.Target = best;
     }
 
     private static IGameObject? FindBestTarget(float cameraYaw, Configuration config)
