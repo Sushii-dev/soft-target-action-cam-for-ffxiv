@@ -27,8 +27,13 @@ public sealed class TargetSelector
         frameCounter = 0;
 
         var best = FindBestTarget(cameraHRotation, config);
-        if (best != null)
-            Plugin.TargetManager.Target = best;
+        if (best == null) return;
+
+        // Setting Target calls a native game function that clears SoftTarget as a
+        // side effect. Save and restore it so healers can keep allies soft-targeted.
+        var savedSoft = Plugin.TargetManager.SoftTarget;
+        Plugin.TargetManager.Target = best;
+        Plugin.TargetManager.SoftTarget = savedSoft;
     }
 
     private static IGameObject? FindBestTarget(float cameraYaw, Configuration config)
