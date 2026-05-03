@@ -221,6 +221,24 @@ public sealed class ConfigWindow : Window, IDisposable
             Config.Save();
         }
         ImGui.TextDisabled("  GW2-style crosshair at screen centre. A ring appears when an enemy is soft-targeted.");
+
+        ImGui.BeginDisabled(!Config.ShowReticle);
+
+        var color = Config.ReticleColor;
+        if (ImGui.ColorEdit4("Reticle colour", ref color, ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.AlphaPreviewHalf))
+        {
+            Config.ReticleColor = color;
+            Config.Save();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Reset##reticle"))
+        {
+            Config.ReticleColor = new System.Numerics.Vector4(1f, 1f, 1f, 0.8f);
+            Config.Save();
+        }
+
+        ImGui.EndDisabled();
     }
 
     // ── Camera limits ────────────────────────────────────────────────────────

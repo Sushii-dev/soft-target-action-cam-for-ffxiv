@@ -1,6 +1,7 @@
 using Dalamud.Configuration;
 using Dalamud.Game.ClientState.Keys;
 using System;
+using System.Numerics;
 
 namespace ActionCamera;
 
@@ -50,6 +51,7 @@ public class Configuration : IPluginConfiguration
 
     // --- Reticle ---
     public bool ShowReticle { get; set; } = true;
+    public Vector4 ReticleColor { get; set; } = new Vector4(1f, 1f, 1f, 0.8f);
 
     // --- Vertical camera limits ---
     // These mirror the game's own limits and can be tightened by the user.
