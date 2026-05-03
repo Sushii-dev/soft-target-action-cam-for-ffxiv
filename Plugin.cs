@@ -34,6 +34,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private readonly CameraController cameraController;
     private readonly TargetSelector targetSelector;
+    private readonly ReticleOverlay reticleOverlay;
 
     // True when the user wants action cam on (independent of menu suppression).
     private bool userWantsActive;
@@ -43,8 +44,9 @@ public sealed class Plugin : IDalamudPlugin
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
 
-        targetSelector = new TargetSelector(Configuration);
+        targetSelector   = new TargetSelector(Configuration);
         cameraController = new CameraController(Configuration, targetSelector);
+        reticleOverlay   = new ReticleOverlay(cameraController, Configuration);
 
         ConfigWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(ConfigWindow);
@@ -154,6 +156,10 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
 
-    private void DrawUI() => WindowSystem.Draw();
+    private void DrawUI()
+    {
+        WindowSystem.Draw();
+        reticleOverlay.Draw();
+    }
     private void OpenConfigUi() => ConfigWindow.IsOpen = true;
 }

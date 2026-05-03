@@ -38,6 +38,8 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         DrawTargetingSection();
         ImGui.Separator();
+        DrawReticleSection();
+        ImGui.Separator();
         DrawCameraLimitsSection();
     }
 
@@ -203,6 +205,22 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled("  Higher = prefer more-centred targets; lower = prefer closer.");
 
         ImGui.EndDisabled();
+    }
+
+    // ── Reticle ──────────────────────────────────────────────────────────────
+
+    private void DrawReticleSection()
+    {
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Reticle");
+        ImGui.Spacing();
+
+        var show = Config.ShowReticle;
+        if (ImGui.Checkbox("Show targeting reticle", ref show))
+        {
+            Config.ShowReticle = show;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  GW2-style crosshair at screen centre. A ring appears when an enemy is soft-targeted.");
     }
 
     // ── Camera limits ────────────────────────────────────────────────────────

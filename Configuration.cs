@@ -48,6 +48,9 @@ public class Configuration : IPluginConfiguration
     // Higher = prefer more centred targets; lower = prefer closer targets.
     public float AutoTargetAngleWeight { get; set; } = 2.0f;
 
+    // --- Reticle ---
+    public bool ShowReticle { get; set; } = true;
+
     // --- Vertical camera limits ---
     // These mirror the game's own limits and can be tightened by the user.
     public float MinVRotationOverride { get; set; } = -1.45f;   // ~-83°
