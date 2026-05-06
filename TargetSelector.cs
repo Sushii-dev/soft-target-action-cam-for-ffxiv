@@ -89,6 +89,7 @@ public sealed class TargetSelector
         if (obj.GameObjectId == localPlayer.GameObjectId) return false;
         if (obj.ObjectKind != ObjectKind.BattleNpc) return false;
         if (obj is not IBattleNpc npc || (byte)npc.BattleNpcKind != 5) return false;
+        if (npc.CurrentHp == 0) return false;
         if (!obj.IsTargetable) return false;
         return IsTargetingParty(obj, localPlayer);
     }
