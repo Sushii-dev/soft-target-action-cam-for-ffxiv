@@ -36,10 +36,8 @@ public sealed unsafe class CameraController : IDisposable
 
     private CameraControlType CameraControlTypeDetour()
     {
-        var original = cameraControlHook!.Original();
-        if (isActive && original == CameraControlType.Mouse)
-            return CameraControlType.None;
-        return original;
+        if (isActive) return CameraControlType.None;
+        return cameraControlHook!.Original();
     }
 
     // ── State ────────────────────────────────────────────────────────────────
