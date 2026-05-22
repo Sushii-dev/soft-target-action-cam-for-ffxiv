@@ -6,13 +6,15 @@ using Dalamud.Game.ClientState.Objects.Types;
 namespace ActionCamera;
 
 /// <summary>
-/// Scans the object table each frame and soft-targets the most centred hostile
-/// enemy within the configured distance and field-of-view cone.
+/// Scans the object table periodically and writes the most centred hostile
+/// enemy in the configured FOV cone to both MouseOverTarget (yellow outline)
+/// and SoftTarget (red ring) each frame.
 /// </summary>
 public sealed class TargetSelector
 {
     private const int ScanIntervalFrames = 3;
-    private int frameCounter;
+    private int frameCounter = ScanIntervalFrames;
+    private IGameObject? cachedBest;
 
     private readonly Configuration config;
 
@@ -23,10 +25,20 @@ public sealed class TargetSelector
 
     public void Update(float cameraHRotation)
     {
-        if (++frameCounter < ScanIntervalFrames) return;
-        frameCounter = 0;
+        if (++frameCounter >= ScanIntervalFrames)
+        {
+            frameCounter = 0;
+            cachedBest = FindBestTarget(cameraHRotation, config);
+        }
 
-        Plugin.TargetManager.SoftTarget = FindBestTarget(cameraHRotation, config);
+        // Write MouseOverTarget every frame — the game's cursor hit-test
+        // rewrites this slot each frame, so a sticky cone target only holds
+        // if we re-apply it after the game's write. MouseOverTarget drives
+        // the yellow-outline highlight and feeds ReAction's "Field Target".
+        // SoftTarget gets the same value so the red ring acts as a visible
+        // indicator and ReAction's "Soft Target" priority still works.
+        Plugin.TargetManager.MouseOverTarget = cachedBest;
+        Plugin.TargetManager.SoftTarget = cachedBest;
     }
 
     private static IGameObject? FindBestTarget(float cameraYaw, Configuration config)
