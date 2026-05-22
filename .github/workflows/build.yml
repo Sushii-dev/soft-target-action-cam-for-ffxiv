@@ -56,7 +56,7 @@ jobs:
 
       - name: Record artifact path
         id: paths
-        run: echo "zip=bin/x64/Release/ActionCamera/latest.zip" >> $env:GITHUB_OUTPUT
+        run: echo "zip=bin/x64/Release/ActionCameraSoft/latest.zip" >> $env:GITHUB_OUTPUT
         shell: pwsh
 
       - name: Upload build artifact

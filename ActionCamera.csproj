@@ -8,6 +8,8 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Optimize>true</Optimize>
     <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <AssemblyName>ActionCameraSoft</AssemblyName>
+    <RootNamespace>ActionCamera</RootNamespace>
   </PropertyGroup>
 
   <!--
@@ -56,7 +58,7 @@
 
   <ItemGroup>
     <!-- Copy the plugin manifest into the output folder alongside the DLL. -->
-    <Content Include="ActionCamera.json">
+    <Content Include="ActionCameraSoft.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
