@@ -4,7 +4,7 @@
     "Name": "Action Camera (Soft Target)",
     "InternalName": "ActionCameraSoft",
     "AssemblyVersion": "0.5.9.9",
-    "Description": "Fork of grimgrum's Action Camera. Cone writes SoftTarget instead of Target so a manually-cycled hard target always wins (pairs with ReAction Target -> Soft Target stacks). Hold a key to capture the mouse, rotate the camera freely, and auto-face your character.",
+    "Description": "Fork of grimgrum's Action Camera. Cone writes MouseOverTarget (yellow outline) + SoftTarget (red ring) each frame instead of clobbering the hard target. Pairs with ReAction stacks using Field Target or Soft Target priority. Hold a key to capture the mouse, rotate the camera freely, and auto-face your character.",
     "RepoUrl": "https://github.com/Sushii-dev/soft-target-action-cam-for-ffxiv",
     "ApplicableVersion": "any",
     "Tags": [

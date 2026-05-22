@@ -2,7 +2,7 @@
   "Author": "grimgrum (soft-target fork by Sushii-dev)",
   "Name": "Action Camera (Soft Target)",
   "Punchline": "GW2-style action camera for FFXIV \u2014 soft-target variant.",
-  "Description": "Fork of grimgrum's Action Camera. The auto-target cone writes to SoftTarget instead of Target, so a manually-cycled hard target (e.g. MMB) always wins and persists. Pairs well with ReAction stacks ordered Target -> Soft Target. Hold or toggle a configurable key to capture the mouse, freely rotate the camera with mouse movement, and auto-face your character toward the camera.",
+  "Description": "Fork of grimgrum's Action Camera. The auto-target cone writes MouseOverTarget (yellow outline) and SoftTarget (red ring) each frame instead of clobbering the hard target. A manually-cycled hard target (e.g. MMB) always wins and persists; the cone fills the soft slot otherwise. Pairs with ReAction stacks using either 'Field Target' or 'Soft Target' priority. Hold or toggle a configurable key to capture the mouse, freely rotate the camera, and auto-face your character toward the camera.",
   "RepoUrl": "https://github.com/Sushii-dev/soft-target-action-cam-for-ffxiv",
   "ApplicableVersion": "any",
   "Tags": ["camera", "action", "targeting", "qol", "soft-target"],
