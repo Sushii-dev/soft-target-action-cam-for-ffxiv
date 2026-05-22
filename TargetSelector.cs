@@ -16,6 +16,9 @@ public sealed unsafe class TargetSelector
     private int frameCounter = ScanIntervalFrames;
     private IGameObject? cachedBest;
 
+    // Exposed for HardTargetSuppressor: address of the cone's current pick, or 0.
+    public nint CachedBestAddress => cachedBest?.Address ?? nint.Zero;
+
     private readonly Configuration config;
 
     public TargetSelector(Configuration config)

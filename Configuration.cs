@@ -60,6 +60,12 @@ public class Configuration : IPluginConfiguration
     // When false, all valid hostile NPCs in the cone are considered.
     public bool RequireAggro { get; set; } = false;
 
+    // Hardcoded FFXIV behavior: if you have no hard target and use an action against
+    // your soft target, the game promotes it to a hard target. The plugin can suppress
+    // this by hooking TargetSystem.SetHardTarget and rejecting calls whose target
+    // matches the cone's current pick while the camera is active.
+    public bool SuppressSoftToHardPromotion { get; set; } = true;
+
     // --- Reticle ---
     public bool ShowReticle { get; set; } = true;
     public Vector4 ReticleColor { get; set; } = new Vector4(1f, 1f, 1f, 0.8f);

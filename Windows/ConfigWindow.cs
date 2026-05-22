@@ -238,6 +238,17 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled("  Off (default): cone includes loitering / non-aggroed mobs.");
         ImGui.TextDisabled("  On: only mobs currently targeting you or a party member.");
 
+        ImGui.Spacing();
+        var suppress = Config.SuppressSoftToHardPromotion;
+        if (ImGui.Checkbox("Suppress soft -> hard promotion on action use", ref suppress))
+        {
+            Config.SuppressSoftToHardPromotion = suppress;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  FFXIV promotes the soft target to hard when you use an action");
+        ImGui.TextDisabled("  with no hard target. This hook rejects that specific promotion");
+        ImGui.TextDisabled("  while the cone is active.");
+
         ImGui.EndDisabled();
     }
 
