@@ -10,7 +10,7 @@ namespace ActionCamera;
 /// enemy in the configured FOV cone to both MouseOverTarget (yellow outline)
 /// and SoftTarget (red ring) each frame.
 /// </summary>
-public sealed class TargetSelector
+public sealed unsafe class TargetSelector
 {
     private const int ScanIntervalFrames = 3;
     private int frameCounter = ScanIntervalFrames;
@@ -31,13 +31,22 @@ public sealed class TargetSelector
             cachedBest = FindBestTarget(cameraHRotation, config);
         }
 
-        // Write each enabled slot every frame. MouseOverTarget must be
-        // re-applied each frame to outlast the game's per-frame cursor
-        // hit-test; the others are written for symmetry and so changes to
-        // the toggles take effect immediately.
-        if (config.WriteMouseOverTarget) Plugin.TargetManager.MouseOverTarget = cachedBest;
-        if (config.WriteSoftTarget)      Plugin.TargetManager.SoftTarget      = cachedBest;
-        if (config.WriteHardTarget)      Plugin.TargetManager.Target          = cachedBest;
+        if (config.WriteMouseOverTarget)
+        {
+            // Dalamud's ITargetManager.MouseOverTarget setter only writes the
+            // logical pointer at TargetSystem+0xD0. The yellow-outline renderer
+            // reads from TargetOutlineInfo at +0x70 (a separate struct). We need
+            // to write both, every frame, to keep the highlight after the game's
+            // own per-frame cursor hit-test clears them.
+            var ts = FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance();
+            var go = cachedBest != null
+                ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)cachedBest.Address
+                : null;
+            ts->MouseOverTarget = go;
+            ts->TargetOutlineInfo.MouseOverTarget = go;
+        }
+        if (config.WriteSoftTarget) Plugin.TargetManager.SoftTarget = cachedBest;
+        if (config.WriteHardTarget) Plugin.TargetManager.Target     = cachedBest;
     }
 
     private static IGameObject? FindBestTarget(float cameraYaw, Configuration config)
