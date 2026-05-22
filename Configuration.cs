@@ -49,6 +49,17 @@ public class Configuration : IPluginConfiguration
     // Higher = prefer more centred targets; lower = prefer closer targets.
     public float AutoTargetAngleWeight { get; set; } = 2.0f;
 
+    // Which target slot(s) the cone writes each frame.
+    // MouseOverTarget = yellow outline; SoftTarget = red ring; Target = hard.
+    public bool WriteMouseOverTarget { get; set; } = true;
+    public bool WriteSoftTarget { get; set; } = true;
+    public bool WriteHardTarget { get; set; } = false;
+
+    // When true, only enemies currently targeting the player or party are considered
+    // (upstream behavior — avoids accidentally engaging loitering mobs via hard target).
+    // When false, all valid hostile NPCs in the cone are considered.
+    public bool RequireAggro { get; set; } = false;
+
     // --- Reticle ---
     public bool ShowReticle { get; set; } = true;
     public Vector4 ReticleColor { get; set; } = new Vector4(1f, 1f, 1f, 0.8f);

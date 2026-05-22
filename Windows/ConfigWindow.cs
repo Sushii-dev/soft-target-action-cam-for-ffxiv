@@ -204,6 +204,40 @@ public sealed class ConfigWindow : Window, IDisposable
         }
         ImGui.TextDisabled("  Higher = prefer more-centred targets; lower = prefer closer.");
 
+        ImGui.Spacing();
+        ImGui.TextDisabled("Target slots written each frame:");
+
+        var mo = Config.WriteMouseOverTarget;
+        if (ImGui.Checkbox("MouseOver Target (yellow outline, ReAction \"Field Target\")", ref mo))
+        {
+            Config.WriteMouseOverTarget = mo;
+            Config.Save();
+        }
+
+        var st = Config.WriteSoftTarget;
+        if (ImGui.Checkbox("Soft Target (red ring, ReAction \"Soft Target\")", ref st))
+        {
+            Config.WriteSoftTarget = st;
+            Config.Save();
+        }
+
+        var ht = Config.WriteHardTarget;
+        if (ImGui.Checkbox("Hard Target (locks on — upstream behavior; overrides MMB cycle)", ref ht))
+        {
+            Config.WriteHardTarget = ht;
+            Config.Save();
+        }
+
+        ImGui.Spacing();
+        var aggro = Config.RequireAggro;
+        if (ImGui.Checkbox("Only target enemies engaged with player / party", ref aggro))
+        {
+            Config.RequireAggro = aggro;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Off (default): cone includes loitering / non-aggroed mobs.");
+        ImGui.TextDisabled("  On: only mobs currently targeting you or a party member.");
+
         ImGui.EndDisabled();
     }
 

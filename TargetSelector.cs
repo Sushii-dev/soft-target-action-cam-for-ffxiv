@@ -31,14 +31,13 @@ public sealed class TargetSelector
             cachedBest = FindBestTarget(cameraHRotation, config);
         }
 
-        // Write MouseOverTarget every frame — the game's cursor hit-test
-        // rewrites this slot each frame, so a sticky cone target only holds
-        // if we re-apply it after the game's write. MouseOverTarget drives
-        // the yellow-outline highlight and feeds ReAction's "Field Target".
-        // SoftTarget gets the same value so the red ring acts as a visible
-        // indicator and ReAction's "Soft Target" priority still works.
-        Plugin.TargetManager.MouseOverTarget = cachedBest;
-        Plugin.TargetManager.SoftTarget = cachedBest;
+        // Write each enabled slot every frame. MouseOverTarget must be
+        // re-applied each frame to outlast the game's per-frame cursor
+        // hit-test; the others are written for symmetry and so changes to
+        // the toggles take effect immediately.
+        if (config.WriteMouseOverTarget) Plugin.TargetManager.MouseOverTarget = cachedBest;
+        if (config.WriteSoftTarget)      Plugin.TargetManager.SoftTarget      = cachedBest;
+        if (config.WriteHardTarget)      Plugin.TargetManager.Target          = cachedBest;
     }
 
     private static IGameObject? FindBestTarget(float cameraYaw, Configuration config)
@@ -61,7 +60,7 @@ public sealed class TargetSelector
 
         foreach (var obj in Plugin.ObjectTable)
         {
-            if (!IsValidTarget(obj, localPlayer)) continue;
+            if (!IsValidTarget(obj, localPlayer, config.RequireAggro)) continue;
 
             var toTarget = obj.Position - playerPos;
             var distSq = toTarget.LengthSquared();
@@ -89,14 +88,15 @@ public sealed class TargetSelector
         return bestObj;
     }
 
-    private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer)
+    private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer, bool requireAggro)
     {
         if (obj.GameObjectId == localPlayer.GameObjectId) return false;
         if (obj.ObjectKind != ObjectKind.BattleNpc) return false;
         if (obj is not IBattleNpc npc || (byte)npc.BattleNpcKind != 5) return false;
         if (npc.CurrentHp == 0) return false;
         if (!obj.IsTargetable) return false;
-        return IsTargetingParty(obj, localPlayer);
+        if (requireAggro && !IsTargetingParty(obj, localPlayer)) return false;
+        return true;
     }
 
     private static bool IsTargetingParty(IGameObject obj, IGameObject localPlayer)
