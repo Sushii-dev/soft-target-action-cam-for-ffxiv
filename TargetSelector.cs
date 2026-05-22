@@ -33,17 +33,23 @@ public sealed unsafe class TargetSelector
 
         if (config.WriteMouseOverTarget)
         {
-            // Dalamud's ITargetManager.MouseOverTarget setter only writes the
-            // logical pointer at TargetSystem+0xD0. The yellow-outline renderer
-            // reads from TargetOutlineInfo at +0x70 (a separate struct). We need
-            // to write both, every frame, to keep the highlight after the game's
-            // own per-frame cursor hit-test clears them.
+            // Two parts:
+            //   1. Write TargetSystem.MouseOverTarget (+0xD0) so ReAction's
+            //      "Field Target" pronoun and other consumers see our pick.
+            //   2. Paint the yellow outline by calling GameObject.Highlight
+            //      directly (vfunc 26). Writing OutlineInfo.MouseOverTarget
+            //      (+0x70) is futile because the game's ProcessMouseState
+            //      clobbers it from the real cursor position each frame
+            //      *before* UpdateOutline runs. Highlight writes
+            //      DrawObject.OutlineColor directly; must be re-applied each
+            //      frame because UpdateOutline resets prior highlights.
             var ts = FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance();
             var go = cachedBest != null
                 ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)cachedBest.Address
                 : null;
             ts->MouseOverTarget = go;
-            ts->TargetOutlineInfo.MouseOverTarget = go;
+            if (go != null)
+                go->Highlight(FFXIVClientStructs.FFXIV.Client.Game.Object.ObjectHighlightColor.Yellow);
         }
         if (config.WriteSoftTarget) Plugin.TargetManager.SoftTarget = cachedBest;
         if (config.WriteHardTarget) Plugin.TargetManager.Target     = cachedBest;
