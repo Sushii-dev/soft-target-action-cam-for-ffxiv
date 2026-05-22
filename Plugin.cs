@@ -40,6 +40,7 @@ public sealed class Plugin : IDalamudPlugin
     // True when the user wants action cam on (independent of menu suppression).
     private bool userWantsActive;
     private bool toggleKeyWasDown;
+    private bool clearTargetKeyWasDown;
 
     public Plugin()
     {
@@ -55,7 +56,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggle action camera mode. Args: on | off | config"
+            HelpMessage = "Toggle action camera mode. Args: on | off | config | cleartarget"
         });
 
         PluginInterface.UiBuilder.Draw += DrawUI;
@@ -87,9 +88,22 @@ public sealed class Plugin : IDalamudPlugin
         }
 
         HandleToggleKey();
+        HandleClearTargetKey();
         ReconcileActiveState();
         cameraController.Update();
     }
+
+    private void HandleClearTargetKey()
+    {
+        if (Configuration.ClearHardTargetKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
+
+        var isDown = KeyState[Configuration.ClearHardTargetKey];
+        if (isDown && !clearTargetKeyWasDown)
+            ClearHardTarget();
+        clearTargetKeyWasDown = isDown;
+    }
+
+    private static void ClearHardTarget() => TargetManager.Target = null;
 
     // Separate user intent from actual state so menu suppression is transparent.
     private void ReconcileActiveState()
@@ -151,6 +165,9 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "config":
                 ConfigWindow.IsOpen = true;
+                break;
+            case "cleartarget":
+                ClearHardTarget();
                 break;
             default:
                 userWantsActive = !userWantsActive;

@@ -19,6 +19,9 @@ public class Configuration : IPluginConfiguration
     // If false, the key toggles action cam on/off.
     public bool HoldToActivate { get; set; } = false;
 
+    // Key that clears the current hard target on press. Edge-triggered.
+    public VirtualKey ClearHardTargetKey { get; set; } = VirtualKey.NO_KEY;
+
     // --- Mouse sensitivity ---
 
     public float MouseSensitivityX { get; set; } = 0.003f;
