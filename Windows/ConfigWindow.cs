@@ -230,6 +230,27 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.EndDisabled();
 
         ImGui.Spacing();
+        ImGui.Text("Hard target key:");
+        ImGui.SameLine();
+        DrawKeyPicker("hardkey", Config.HardTargetKey,
+            k => Config.HardTargetKey = k, ref listeningForHardKey);
+        ImGui.TextDisabled("  Edge-triggered: hard-targets the cone pick (only while camera is active).");
+
+        var clearsOnPress = Config.HardTargetKeyClearsOnPress;
+        if (ImGui.Checkbox("  Same key also clears the hard target when one exists", ref clearsOnPress))
+        {
+            Config.HardTargetKeyClearsOnPress = clearsOnPress;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Turns the hard target key into a single toggle. The standalone");
+        ImGui.TextDisabled("  clear-key below is disabled while this is on.");
+
+        // Standalone clear-target key — greyed out when the toggle flag owns
+        // clearing. The runtime handler also skips firing in that case, so a
+        // previously-saved binding can't double-fire with the toggle.
+        ImGui.BeginDisabled(Config.HardTargetKeyClearsOnPress);
+
+        ImGui.Spacing();
         ImGui.Text("Clear hard target key:");
         ImGui.SameLine();
         DrawKeyPicker("clearkey", Config.ClearHardTargetKey,
@@ -237,12 +258,7 @@ public sealed class ConfigWindow : Window, IDisposable
             noneLabel: "(none – use /actioncam cleartarget)");
         ImGui.TextDisabled("  Edge-triggered: clears the current hard target on key down.");
 
-        ImGui.Spacing();
-        ImGui.Text("Hard target key:");
-        ImGui.SameLine();
-        DrawKeyPicker("hardkey", Config.HardTargetKey,
-            k => Config.HardTargetKey = k, ref listeningForHardKey);
-        ImGui.TextDisabled("  Edge-triggered: hard-targets the cone pick (only while camera is active).");
+        ImGui.EndDisabled();
     }
 
     // ── Key picker helper ────────────────────────────────────────────────────

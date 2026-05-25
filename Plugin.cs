@@ -114,6 +114,17 @@ public sealed class Plugin : IDalamudPlugin
 
         if (!rising) return;
         if (menuOpen) return;
+
+        // Toggle mode: if the flag is on AND a hard target already exists,
+        // this press clears it instead of re-targeting. Clear branch is not
+        // gated on IsActive — clearing is meaningful outside camera mode too.
+        if (Configuration.HardTargetKeyClearsOnPress && TargetManager.Target != null)
+        {
+            ClearHardTarget();
+            return;
+        }
+
+        // Set branch: cachedBest is only fresh while the camera is active.
         if (!cameraController.IsActive) return;
 
         var pick = targetSelector.CachedBest;
@@ -131,10 +142,19 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (Configuration.ClearHardTargetKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
 
+        // Edge state always tracked so toggling the "key clears on press" flag
+        // mid-press doesn't fire a phantom clear when this handler re-enables.
         var isDown = InputBinding.IsDown(Configuration.ClearHardTargetKey);
-        if (isDown && !clearTargetKeyWasDown && !menuOpen)
-            ClearHardTarget();
+        var rising = isDown && !clearTargetKeyWasDown;
         clearTargetKeyWasDown = isDown;
+
+        // Skip the action entirely when the toggle flag owns clearing. Prevents
+        // a previously-saved binding from double-firing with HardTargetKey and
+        // turning a clear into a target-swap.
+        if (Configuration.HardTargetKeyClearsOnPress) return;
+
+        if (rising && !menuOpen)
+            ClearHardTarget();
     }
 
     private static void ClearHardTarget() => TargetManager.Target = null;

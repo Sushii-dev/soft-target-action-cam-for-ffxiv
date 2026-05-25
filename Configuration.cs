@@ -28,6 +28,14 @@ public class Configuration : IPluginConfiguration
     // Punches through SuppressSoftToHardPromotion via a one-shot bypass on the hook.
     public VirtualKey HardTargetKey { get; set; } = VirtualKey.NO_KEY;
 
+    // When true, HardTargetKey doubles as a clear: pressing it while a hard
+    // target exists clears it instead of re-targeting. The clear branch is
+    // not gated on IsActive — clearing is meaningful outside camera mode too.
+    // While this flag is on, the standalone ClearHardTargetKey handler is
+    // skipped at runtime (regardless of what's bound to it) so we can't
+    // double-fire and accidentally turn a clear into a target-swap.
+    public bool HardTargetKeyClearsOnPress { get; set; } = false;
+
     // --- Mouse sensitivity ---
 
     public float MouseSensitivityX { get; set; } = 0.003f;
