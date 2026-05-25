@@ -37,11 +37,16 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ReticleOverlay reticleOverlay;
     private readonly HardTargetSuppressor hardTargetSuppressor;
 
-    // True when the user wants action cam on (independent of menu suppression).
+    // True when the user explicitly engaged the cam via the activation key.
+    // This is intent only — actual cam state mirrors cursor visibility (so
+    // RMB-hold etc. also activate the cam). userWantsActive is consulted for
+    // sticky-off semantics (popup → cursor shown → reset intent unless an
+    // auto-resume exemption applies) and for auto-resume bookkeeping.
     private bool userWantsActive;
     private bool toggleKeyWasDown;
     private bool clearTargetKeyWasDown;
     private bool hardTargetKeyWasDown;
+    private bool wasExemptedLastTick;
 
     public Plugin()
     {
@@ -84,7 +89,11 @@ public sealed class Plugin : IDalamudPlugin
         if (!ClientState.IsLoggedIn)
         {
             if (cameraController.IsActive) cameraController.Deactivate();
-            userWantsActive = false;
+            if (userWantsActive)
+            {
+                cameraController.RequestShowCursor();
+                userWantsActive = false;
+            }
             return;
         }
 
@@ -108,38 +117,57 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
-    /// Drives the cam state from cursor visibility.
+    /// Cam state mirrors cursor visibility. Cursor hidden by any mechanism
+    /// (activation key, RMB-hold, plugin, …) ⇒ cam active. Cursor visible
+    /// ⇒ cam inactive. This is what makes "by definition, cursor hidden →
+    /// cam active" hold without the user needing to know which mechanism
+    /// hid the cursor.
     ///
-    /// - Active + cursor visible: cursor was force-shown by something (popup,
-    ///   menu, cutscene, alt-tab, plugin window, …). If no auto-resume
-    ///   exemption matches the current game state, sticky off: reset
-    ///   userWantsActive and deactivate. If an exemption matches, deactivate
-    ///   but keep userWantsActive=true so we auto-resume when the cursor
-    ///   hides again.
-    /// - !userWantsActive while active: user pressed the toggle to turn off.
-    /// - userWantsActive + !active + cursor hidden: activate.
+    /// userWantsActive is consulted only for intent management:
+    ///   - Cursor visible + intent + not exempted: sticky off — reset intent.
+    ///   - Cursor visible + intent + exempted: defer (keep intent).
+    ///   - Cursor visible + intent + just-cleared exemption: auto-resume —
+    ///     re-hide the cursor so we slide back into the active branch.
     /// </summary>
     private void ReconcileCursorSync()
     {
         var cursorVisible = CameraController.IsGameCursorVisible();
+        var exempted = IsCurrentlyExempted();
 
-        if (cameraController.IsActive)
+        // Intent bookkeeping — only matters while we have an explicit intent
+        // AND the cursor is currently visible. Drives sticky-off vs defer vs
+        // auto-resume. RMB-hold case skips this branch entirely because
+        // userWantsActive is false.
+        if (cursorVisible && userWantsActive)
         {
-            if (cursorVisible)
+            if (exempted)
             {
-                if (!IsCurrentlyExempted())
-                    userWantsActive = false;
-                cameraController.Deactivate();
+                // Defer. Cam is off because cursor is visible, but intent
+                // stays so we re-engage when the cursor hides again.
             }
-            else if (!userWantsActive)
+            else if (wasExemptedLastTick)
             {
-                cameraController.Deactivate();
+                // Exemption just cleared and cursor is still visible (game
+                // didn't auto-hide). Auto-resume: re-hide the cursor and let
+                // the cam state mirror that hidden state on the next read.
+                cameraController.RequestHideCursor();
+            }
+            else
+            {
+                // Sustained external cursor-show without any exemption.
+                // Sticky off — fresh activation key press required.
+                userWantsActive = false;
             }
         }
-        else if (userWantsActive && !cursorVisible)
-        {
+        wasExemptedLastTick = exempted;
+
+        // Re-read after the potential auto-resume Hide() above.
+        cursorVisible = CameraController.IsGameCursorVisible();
+
+        if (cursorVisible && cameraController.IsActive)
+            cameraController.Deactivate();
+        else if (!cursorVisible && !cameraController.IsActive)
             cameraController.Activate();
-        }
     }
 
     /// <summary>
@@ -259,18 +287,22 @@ public sealed class Plugin : IDalamudPlugin
         if (Configuration.ActivationKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
 
         // Toggle only. Hold-to-activate was removed when cursor-sync became
-        // the activation model — its semantics ("active while held") don't
-        // mesh with sticky-off ("active until cursor visible, then locked off
-        // until fresh press").
+        // the activation model.
         //
         // The menuOpen gate prevents toggling while the player is typing in
-        // chat / any focused addon — actual cam state is driven by cursor
-        // visibility in ReconcileCursorSync, but we still don't want a key in
-        // chat to flip userWantsActive.
+        // chat / any focused addon — actual cam state mirrors cursor
+        // visibility, but we still don't want a key in chat to swap the
+        // hide/show state.
         var isDown = InputBinding.IsDown(Configuration.ActivationKey);
-        if (isDown && !toggleKeyWasDown && !menuOpen)
-            userWantsActive = !userWantsActive;
+        var rising = isDown && !toggleKeyWasDown;
         toggleKeyWasDown = isDown;
+        if (!rising || menuOpen) return;
+
+        userWantsActive = !userWantsActive;
+        if (userWantsActive)
+            cameraController.RequestHideCursor();
+        else
+            cameraController.RequestShowCursor();
     }
 
     private void OnCommand(string command, string args)

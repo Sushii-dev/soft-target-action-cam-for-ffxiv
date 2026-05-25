@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
+using FFXIVClientStructs.FFXIV.Client.System.Input;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace ActionCamera;
@@ -92,22 +93,26 @@ public sealed unsafe class CameraController : IDisposable
     public void Dispose()
     {
         if (isActive) Deactivate();
+        // Make sure we don't leave the cursor hidden if the plugin is
+        // disabled / hot-reloaded while userWantsActive was on.
+        if (cursorHidden) RequestShowCursor();
         cameraControlHook?.Dispose();
     }
 
     // ── Activation ───────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Activate the camera-control logic. Caller is responsible for the cursor
+    /// being hidden — Activate() doesn't manipulate cursor visibility itself.
+    /// That decoupling is what lets RMB-hold (which hides the cursor through
+    /// the input layer) drive activation just like an explicit RequestHide().
+    /// </summary>
     public void Activate()
     {
         if (isActive || !Plugin.ClientState.IsLoggedIn) return;
 
-        // Remember current cursor so we can restore it on deactivation.
-        GetCursorPos(out savedCursorPos);
-
         RecalcScreenCenter();
         SetCursorPos(screenCenter.X, screenCenter.Y);
-
-        HideGameCursor();
 
         firstMotionAfterActivate = true;
         isActive = true;
@@ -120,42 +125,58 @@ public sealed unsafe class CameraController : IDisposable
         isActive = false;
         firstMotionAfterActivate = false;
 
-        ShowGameCursor();
-
-        SetCursorPos(savedCursorPos.X, savedCursorPos.Y);
         targetSelector.ClearMouseOverHighlight();
         Plugin.Log.Debug("[ActionCamera] Deactivated.");
     }
 
-    private void HideGameCursor()
+    /// <summary>
+    /// Caller-driven cursor hide. Used by the activation keybind. Saves the
+    /// current cursor position (once — repeated calls don't overwrite) so a
+    /// later RequestShowCursor can restore it. Auto-resume hits this path
+    /// too; the idempotent save means it doesn't clobber the pre-cam position
+    /// with whatever the popup placed the cursor at.
+    /// </summary>
+    public void RequestHideCursor()
     {
-        if (cursorHidden) return;
         var stage = AtkStage.Instance();
         if (stage == null) return;
+        if (!cursorHidden)
+        {
+            GetCursorPos(out savedCursorPos);
+            cursorHidden = true;
+        }
         stage->AtkCursor.Hide();
-        cursorHidden = true;
     }
 
-    private void ShowGameCursor()
+    public void RequestShowCursor()
     {
-        if (!cursorHidden) return;
         var stage = AtkStage.Instance();
         if (stage != null) stage->AtkCursor.Show();
-        cursorHidden = false;
+        if (cursorHidden)
+        {
+            SetCursorPos(savedCursorPos.X, savedCursorPos.Y);
+            cursorHidden = false;
+        }
     }
 
     /// <summary>
     /// True iff FFXIV currently considers the cursor visible to the player.
-    /// Read this from the game's AtkCursor (the same field SimpleTweaks,
-    /// Dalamud, and FFXIV-VR treat as canonical). Reflects popups, cutscenes,
-    /// inactivity-hide and our own Hide/Show calls uniformly — unlike the
-    /// Win32 ShowCursor counter which only governs the OS hardware cursor.
+    /// Combines TWO signals:
+    ///   - AtkCursor.IsVisible (UI layer) — flips on popups, menus,
+    ///     cutscenes, our own Hide()/Show() calls.
+    ///   - Cursor.Instance()->IsCursorVisible (input layer) — flips when
+    ///     the game hides the cursor for camera-rotation input (RMB-hold)
+    ///     or other input-pipeline reasons.
+    /// Hidden if either layer says hidden. AND'd: only "visible" when both
+    /// layers agree the cursor is on screen.
     /// </summary>
     public static bool IsGameCursorVisible()
     {
         var stage = AtkStage.Instance();
-        if (stage == null) return false;
-        return stage->AtkCursor.IsVisible;
+        if (stage != null && !stage->AtkCursor.IsVisible) return false;
+        var input = Cursor.Instance();
+        if (input != null && !input->IsCursorVisible) return false;
+        return true;
     }
 
     // ── Per-frame update ─────────────────────────────────────────────────────
