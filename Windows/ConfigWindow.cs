@@ -227,6 +227,17 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled("  with no hard target. This hook rejects that specific promotion");
         ImGui.TextDisabled("  while the cone is active.");
 
+        ImGui.Spacing();
+        var suppressClick = Config.SuppressClickHardTargetInCam;
+        if (ImGui.Checkbox("Suppress left-click hard targeting in camera mode", ref suppressClick))
+        {
+            Config.SuppressClickHardTargetInCam = suppressClick;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Blocks LMB-click-to-target and LMB-click-empty-to-clear while");
+        ImGui.TextDisabled("  the camera is active. Hard target can only change via the");
+        ImGui.TextDisabled("  configured keybinds. Does not affect non-camera mode.");
+
         ImGui.EndDisabled();
 
         ImGui.Spacing();

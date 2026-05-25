@@ -1,4 +1,5 @@
 using System;
+using Dalamud.Game.ClientState.Keys;
 using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
@@ -57,6 +58,22 @@ internal sealed unsafe class HardTargetSuppressor : IDisposable
         {
             allowNext = false;
             return hook!.Original(ts, target, ign, a4, a5);
+        }
+
+        // Suppress LMB-driven SetHardTarget calls while the camera is active.
+        // FFXIV's click-to-target / click-empty-to-clear fires SetHardTarget on
+        // the click frame while LBUTTON is still physically held, so checking
+        // GetAsyncKeyState here reliably distinguishes click-source calls from
+        // keybind / Tab / plugin-source ones. Covers both the "set hard target
+        // to enemy under cursor" and "clear hard target on empty click" cases.
+        // AllowNext is checked first above, so our own hard-target keybind
+        // continues to work even if it's bound to a mouse button while LMB is
+        // simultaneously held.
+        if (config.SuppressClickHardTargetInCam
+            && isCameraActive()
+            && InputBinding.IsDownRaw(VirtualKey.LBUTTON))
+        {
+            return false;
         }
 
         // Only suppress the precise "promote soft to hard on action use" case:

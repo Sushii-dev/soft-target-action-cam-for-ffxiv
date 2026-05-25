@@ -83,6 +83,16 @@ public class Configuration : IPluginConfiguration
     // matches the cone's current pick while the camera is active.
     public bool SuppressSoftToHardPromotion { get; set; } = true;
 
+    // When camera is active, suppress LMB-driven SetHardTarget calls. Stops the
+    // game's click-to-target / click-empty-to-clear behaviour, so hard target
+    // is only ever changed via the configured keybinds. Detected by checking
+    // whether LBUTTON is physically held at the moment the hook fires —
+    // FFXIV's click-targeting calls SetHardTarget on the click frame while
+    // the button is still down. AllowNext bypass is checked first, so the
+    // hard-target keybind continues to work even when bound to a mouse button
+    // and even if LMB happens to be held simultaneously.
+    public bool SuppressClickHardTargetInCam { get; set; } = true;
+
     // --- Reticle ---
     public bool ShowReticle { get; set; } = true;
     public Vector4 ReticleColor { get; set; } = new Vector4(1f, 1f, 1f, 0.8f);
