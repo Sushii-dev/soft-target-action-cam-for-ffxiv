@@ -117,45 +117,37 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
-    /// Cam state mirrors cursor visibility. Cursor hidden by any mechanism
-    /// (activation key, RMB-hold, plugin, …) ⇒ cam active. Cursor visible
-    /// ⇒ cam inactive. This is what makes "by definition, cursor hidden →
-    /// cam active" hold without the user needing to know which mechanism
-    /// hid the cursor.
+    /// Cam state mirrors cursor visibility — cursor hidden ⇒ cam active —
+    /// PLUS an explicit RMB-held branch so the game's native "right-click to
+    /// rotate camera" gesture also gives the user cam features (cone target,
+    /// character facing) even though it doesn't necessarily flip the UI-layer
+    /// AtkCursor.IsVisible flag.
     ///
-    /// userWantsActive is consulted only for intent management:
-    ///   - Cursor visible + intent + not exempted: sticky off — reset intent.
-    ///   - Cursor visible + intent + exempted: defer (keep intent).
-    ///   - Cursor visible + intent + just-cleared exemption: auto-resume —
-    ///     re-hide the cursor so we slide back into the active branch.
+    /// userWantsActive is consulted only for intent management while cursor
+    /// is visible:
+    ///   - exempted condition active: defer (cam off, intent kept).
+    ///   - just-cleared exemption + cursor still visible: auto-resume by
+    ///     calling Hide() again.
+    ///   - sustained cursor-visible without exemption: sticky off (intent
+    ///     reset, fresh activation press required).
     /// </summary>
     private void ReconcileCursorSync()
     {
         var cursorVisible = CameraController.IsGameCursorVisible();
         var exempted = IsCurrentlyExempted();
 
-        // Intent bookkeeping — only matters while we have an explicit intent
-        // AND the cursor is currently visible. Drives sticky-off vs defer vs
-        // auto-resume. RMB-hold case skips this branch entirely because
-        // userWantsActive is false.
         if (cursorVisible && userWantsActive)
         {
             if (exempted)
             {
-                // Defer. Cam is off because cursor is visible, but intent
-                // stays so we re-engage when the cursor hides again.
+                // Defer.
             }
             else if (wasExemptedLastTick)
             {
-                // Exemption just cleared and cursor is still visible (game
-                // didn't auto-hide). Auto-resume: re-hide the cursor and let
-                // the cam state mirror that hidden state on the next read.
                 cameraController.RequestHideCursor();
             }
             else
             {
-                // Sustained external cursor-show without any exemption.
-                // Sticky off — fresh activation key press required.
                 userWantsActive = false;
             }
         }
@@ -163,11 +155,17 @@ public sealed class Plugin : IDalamudPlugin
 
         // Re-read after the potential auto-resume Hide() above.
         cursorVisible = CameraController.IsGameCursorVisible();
+        var rbHeld = CameraController.IsRmbHeld();
 
-        if (cursorVisible && cameraController.IsActive)
-            cameraController.Deactivate();
-        else if (!cursorVisible && !cameraController.IsActive)
+        // Cam runs when the UI says cursor is hidden (CTRL-driven session)
+        // OR when RMB is held (game-driven camera rotation, we add cone +
+        // facing on top).
+        var shouldBeActive = !cursorVisible || rbHeld;
+
+        if (shouldBeActive && !cameraController.IsActive)
             cameraController.Activate();
+        else if (!shouldBeActive && cameraController.IsActive)
+            cameraController.Deactivate();
     }
 
     /// <summary>

@@ -2,10 +2,10 @@ using System;
 using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
+using Dalamud.Game.ClientState.Keys;
 using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
-using FFXIVClientStructs.FFXIV.Client.System.Input;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace ActionCamera;
@@ -41,7 +41,13 @@ public sealed unsafe class CameraController : IDisposable
 
     private CameraControlType CameraControlTypeDetour()
     {
-        if (isActive) return CameraControlType.None;
+        // We want the game's native RMB camera rotation to keep working while
+        // RMB is held — that's the gesture the user expects to "look around"
+        // with. So even when our cam is active, only suppress the game's own
+        // camera control when RMB is NOT held. While RMB is held, return the
+        // original so the game rotates the camera; we do cone targeting and
+        // character facing on top via the rbHeld branch in Update().
+        if (isActive && !IsRmbHeld()) return CameraControlType.None;
         return cameraControlHook!.Original();
     }
 
@@ -112,9 +118,17 @@ public sealed unsafe class CameraController : IDisposable
         if (isActive || !Plugin.ClientState.IsLoggedIn) return;
 
         RecalcScreenCenter();
-        SetCursorPos(screenCenter.X, screenCenter.Y);
 
-        firstMotionAfterActivate = true;
+        // Don't yank the cursor to centre if the game has it locked for RMB
+        // camera control — that would fight the game's lock and produce
+        // weird input. The rbHeld branch in Update() skips our cursor logic
+        // entirely, so the centre warp isn't needed while RMB is active.
+        if (!IsRmbHeld())
+        {
+            SetCursorPos(screenCenter.X, screenCenter.Y);
+            firstMotionAfterActivate = true;
+        }
+
         isActive = true;
         Plugin.Log.Debug("[ActionCamera] Activated.");
     }
@@ -160,24 +174,29 @@ public sealed unsafe class CameraController : IDisposable
     }
 
     /// <summary>
-    /// True iff FFXIV currently considers the cursor visible to the player.
-    /// Combines TWO signals:
-    ///   - AtkCursor.IsVisible (UI layer) — flips on popups, menus,
-    ///     cutscenes, our own Hide()/Show() calls.
-    ///   - Cursor.Instance()->IsCursorVisible (input layer) — flips when
-    ///     the game hides the cursor for camera-rotation input (RMB-hold)
-    ///     or other input-pipeline reasons.
-    /// Hidden if either layer says hidden. AND'd: only "visible" when both
-    /// layers agree the cursor is on screen.
+    /// True iff FFXIV's UI layer considers the cursor visible to the player.
+    /// Reads AtkCursor.IsVisible — the same flag SimpleTweaks, Dalamud, and
+    /// FFXIV-VR treat as canonical for popups, menus, cutscenes, and our own
+    /// Hide/Show calls.
+    ///
+    /// We deliberately do NOT consult the input-layer Cursor.IsCursorVisible
+    /// here. That flag flips on transient input-pipeline events (mouse-button
+    /// hold, etc.) and combining it produced sticky-off churn. RMB-driven cam
+    /// activation is handled explicitly via IsRmbHeld below.
     /// </summary>
     public static bool IsGameCursorVisible()
     {
         var stage = AtkStage.Instance();
-        if (stage != null && !stage->AtkCursor.IsVisible) return false;
-        var input = Cursor.Instance();
-        if (input != null && !input->IsCursorVisible) return false;
-        return true;
+        if (stage == null) return false;
+        return stage->AtkCursor.IsVisible;
     }
+
+    /// <summary>
+    /// True while the right mouse button is physically held and the game has
+    /// foreground focus. Drives the "let the game rotate the camera, we only
+    /// run cone targeting + character facing on top" path.
+    /// </summary>
+    public static bool IsRmbHeld() => InputBinding.IsDownRaw(VirtualKey.RBUTTON);
 
     // ── Per-frame update ─────────────────────────────────────────────────────
 
@@ -185,6 +204,23 @@ public sealed unsafe class CameraController : IDisposable
     {
         if (!isActive) return;
         if (!Plugin.ClientState.IsLoggedIn) { Deactivate(); return; }
+
+        // RMB-hold: the game owns cursor lock and camera rotation. Skip our
+        // cursor-warp + delta-based rotation entirely — they would fight the
+        // game's lock and produce a constant non-zero delta from centre to
+        // the click point, spinning the camera. Cone targeting and character
+        // facing still run, using the game's HRotation which the game is
+        // updating from RMB input.
+        if (IsRmbHeld())
+        {
+            var hrot = GetCameraHRotation();
+            if (config.AutoTarget) targetSelector.Update(hrot);
+            if (config.RotateCharacterWithCamera) SetPlayerFacing(hrot);
+            // Re-arm the spike guard so the next CTRL-driven session ignores
+            // the first stale delta. RMB doesn't move our virtual centre.
+            firstMotionAfterActivate = true;
+            return;
+        }
 
         // Read & reset mouse position each frame.
         GetCursorPos(out var cur);
