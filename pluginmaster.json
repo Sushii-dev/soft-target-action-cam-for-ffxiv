@@ -1,22 +1,23 @@
 [
   {
-    "Author": "grimgrum (soft-target fork by Sushii-dev)",
-    "Name": "Action Camera (Soft Target)",
+    "Author": "Sushii-dev (originally by grimgrum)",
+    "Name": "Veiled Aim (BDO + ER)",
     "InternalName": "ActionCameraSoft",
-    "AssemblyVersion": "0.5.10.7",
-    "Description": "Fork of grimgrum's Action Camera. Cone writes MouseOverTarget (yellow outline) + SoftTarget (red ring) each frame instead of clobbering the hard target. Pairs with ReAction stacks using Field Target or Soft Target priority. Hold a key to capture the mouse, rotate the camera freely, and auto-face your character.",
+    "AssemblyVersion": "0.5.11.0",
+    "Description": "BDO-style cursor-driven action camera with Elden Ring-style soft targeting. Press a key to hide the cursor — your character auto-faces the camera, the mouse rotates it freely, and the most-centred hostile enemy in your field of view becomes a soft target (yellow outline + red ring, ReAction Field Target / Soft Target pronoun compatible). Any UI popup that shows the cursor pauses the camera; press the key again to resume. Configurable hard-target keybind with cone-pause, click-to-target suppression, and per-scenario auto-resume exemptions. Originally forked from grimgrum/action-cam-for-FFXIV.",
     "RepoUrl": "https://github.com/Sushii-dev/soft-target-action-cam-for-ffxiv",
     "ApplicableVersion": "any",
     "Tags": [
       "camera",
-      "action",
+      "action-camera",
       "targeting",
-      "qol",
-      "soft-target"
+      "lockon",
+      "soft-target",
+      "qol"
     ],
     "DalamudApiLevel": 15,
     "DownloadCount": 0,
-    "LastUpdate": 1779737153,
+    "LastUpdate": 1779737386,
     "IsHide": false,
     "IsTestingExclusive": false,
     "DownloadLinkInstall": "https://github.com/Sushii-dev/soft-target-action-cam-for-ffxiv/releases/latest/download/latest.zip",
