@@ -19,6 +19,10 @@ public sealed unsafe class TargetSelector
     // DrawObject.OutlineColor when the cone moves to a different target or empty —
     // the game's own outline updater doesn't clean up direct Highlight() writes.
     private ulong lastHighlightedId;
+    // Edge tracking for the hard-target pause. Set on the frame we first see
+    // a non-null hard target so we can scrub our soft-target/outline writes
+    // exactly once at the transition, rather than every frame while paused.
+    private bool wasPausedByHardTarget;
 
     // Exposed for HardTargetSuppressor: address of the cone's current pick, or 0.
     public nint CachedBestAddress => cachedBest?.Address ?? nint.Zero;
@@ -35,11 +39,31 @@ public sealed unsafe class TargetSelector
 
     public void Update(float cameraHRotation)
     {
+        // Scan unconditionally so CachedBest stays fresh for the manual
+        // hard-target keybind, even while soft-target writes are paused.
+        // That lets the user re-hard-target a different cone pick without
+        // first having to clear the current hard target.
         if (++frameCounter >= ScanIntervalFrames)
         {
             frameCounter = 0;
             cachedBest = FindBestTarget(cameraHRotation, config);
         }
+
+        // Pause writes while a hard target exists (set by Tab, click, our
+        // hard-target keybind, etc.). Resumes automatically when the hard
+        // target is cleared — by the clear-target keybind, by the enemy
+        // dying / despawning, or by the player switching hard target via
+        // any other means.
+        if (Plugin.TargetManager.Target != null)
+        {
+            if (!wasPausedByHardTarget)
+            {
+                ClearOurOutputs();
+                wasPausedByHardTarget = true;
+            }
+            return;
+        }
+        wasPausedByHardTarget = false;
 
         if (config.WriteMouseOverTarget)
         {
@@ -138,6 +162,35 @@ public sealed unsafe class TargetSelector
             lastHighlightedId = 0;
         }
         cachedBest = null;
+        wasPausedByHardTarget = false;
+    }
+
+    /// <summary>
+    /// Scrub our own soft-target/outline writes on the transition into the
+    /// hard-target pause. We deliberately do NOT null cachedBest — the scan
+    /// continues so the manual hard-target keybind can swap to a different
+    /// cone pick.
+    ///
+    /// MouseOverTarget intentionally isn't touched: the game's ProcessMouseState
+    /// rewrites it from the real cursor position every frame, so it'll clear
+    /// itself on the next tick once we stop re-asserting our pick.
+    /// </summary>
+    private void ClearOurOutputs()
+    {
+        if (lastHighlightedId != 0)
+        {
+            ResetHighlight(lastHighlightedId);
+            lastHighlightedId = 0;
+        }
+        // Only clear SoftTarget if it still matches our last cone pick — we
+        // shouldn't clobber a soft target the user or another plugin set
+        // explicitly after we wrote ours.
+        if (cachedBest != null
+            && Plugin.TargetManager.SoftTarget != null
+            && Plugin.TargetManager.SoftTarget.GameObjectId == cachedBest.GameObjectId)
+        {
+            Plugin.TargetManager.SoftTarget = null;
+        }
     }
 
     private static void ResetHighlight(ulong objectId)

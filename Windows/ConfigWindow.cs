@@ -16,6 +16,16 @@ public sealed class ConfigWindow : Window, IDisposable
     private bool listeningForClearKey;
     private bool listeningForHardKey;
 
+    // Shared arming flag: while a picker is listening, we wait for all inputs
+    // to be released before capturing the next press. Stops the LMB click
+    // that opened the picker (and any held modifier) from being captured as
+    // the binding. Only one picker can be listening at a time.
+    private bool pickerArmed;
+
+    // Cached once: we scan this on every picker frame, including a "is any
+    // input held" probe for arming.
+    private static readonly VirtualKey[] AllVirtualKeys = (VirtualKey[])Enum.GetValues(typeof(VirtualKey));
+
     public ConfigWindow(Plugin plugin)
         : base("Action Camera Settings###ActionCameraConfig",
                ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
@@ -55,43 +65,9 @@ public sealed class ConfigWindow : Window, IDisposable
         // Key picker
         ImGui.Text("Activation key:");
         ImGui.SameLine();
-
-        var keyLabel = Config.ActivationKey == VirtualKey.NO_KEY
-            ? "(none – use /actioncam)"
-            : Config.ActivationKey.ToString();
-
-        if (listeningForKey)
-        {
-            ImGui.Button("Press any key…", new Vector2(160, 0));
-
-            foreach (var key in Plugin.KeyState.GetValidVirtualKeys())
-            {
-                if (key is VirtualKey.CONTROL or VirtualKey.SHIFT or VirtualKey.MENU) continue;
-                if (!Plugin.KeyState[key]) continue;
-
-                Config.ActivationKey = key;
-                listeningForKey = false;
-                Config.Save();
-                break;
-            }
-
-            if (ImGui.IsKeyPressed(ImGuiKey.Escape))
-            {
-                listeningForKey = false;
-            }
-        }
-        else
-        {
-            if (ImGui.Button(keyLabel, new Vector2(160, 0)))
-                listeningForKey = true;
-
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Clear"))
-            {
-                Config.ActivationKey = VirtualKey.NO_KEY;
-                Config.Save();
-            }
-        }
+        DrawKeyPicker("actkey", Config.ActivationKey,
+            k => Config.ActivationKey = k, ref listeningForKey,
+            noneLabel: "(none – use /actioncam)");
 
         ImGui.Spacing();
 
@@ -256,82 +232,100 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Spacing();
         ImGui.Text("Clear hard target key:");
         ImGui.SameLine();
-
-        var clearLabel = Config.ClearHardTargetKey == VirtualKey.NO_KEY
-            ? "(none – use /actioncam cleartarget)"
-            : Config.ClearHardTargetKey.ToString();
-
-        if (listeningForClearKey)
-        {
-            ImGui.Button("Press any key…", new Vector2(160, 0));
-
-            foreach (var key in Plugin.KeyState.GetValidVirtualKeys())
-            {
-                if (key is VirtualKey.CONTROL or VirtualKey.SHIFT or VirtualKey.MENU) continue;
-                if (!Plugin.KeyState[key]) continue;
-
-                Config.ClearHardTargetKey = key;
-                listeningForClearKey = false;
-                Config.Save();
-                break;
-            }
-
-            if (ImGui.IsKeyPressed(ImGuiKey.Escape))
-                listeningForClearKey = false;
-        }
-        else
-        {
-            if (ImGui.Button(clearLabel + "##clearkey", new Vector2(160, 0)))
-                listeningForClearKey = true;
-
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Clear##clearkey"))
-            {
-                Config.ClearHardTargetKey = VirtualKey.NO_KEY;
-                Config.Save();
-            }
-        }
+        DrawKeyPicker("clearkey", Config.ClearHardTargetKey,
+            k => Config.ClearHardTargetKey = k, ref listeningForClearKey,
+            noneLabel: "(none – use /actioncam cleartarget)");
         ImGui.TextDisabled("  Edge-triggered: clears the current hard target on key down.");
 
         ImGui.Spacing();
         ImGui.Text("Hard target key:");
         ImGui.SameLine();
+        DrawKeyPicker("hardkey", Config.HardTargetKey,
+            k => Config.HardTargetKey = k, ref listeningForHardKey);
+        ImGui.TextDisabled("  Edge-triggered: hard-targets the cone pick (only while camera is active).");
+    }
 
-        var hardLabel = Config.HardTargetKey == VirtualKey.NO_KEY
-            ? "(none)"
-            : Config.HardTargetKey.ToString();
+    // ── Key picker helper ────────────────────────────────────────────────────
 
-        if (listeningForHardKey)
+    /// <summary>
+    /// Generic picker shared by every keybind row. Supports keyboard keys,
+    /// modifier keys (CONTROL/SHIFT/MENU), and mouse buttons uniformly via
+    /// InputBinding.IsDownRaw — i.e. anything Win32 GetAsyncKeyState reports.
+    ///
+    /// Capture flow:
+    ///   1. User clicks the labelled button → enters listening mode with
+    ///      pickerArmed = false.
+    ///   2. Each frame we check if ANY input is currently held. As long as
+    ///      something is (typically LMB from the click that opened us), we
+    ///      stay disarmed.
+    ///   3. Once everything is released, pickerArmed flips true and the
+    ///      next press is captured.
+    ///
+    /// ESCAPE is reserved for cancel and never captured as a binding.
+    /// </summary>
+    private void DrawKeyPicker(
+        string idSuffix,
+        VirtualKey current,
+        Action<VirtualKey> setter,
+        ref bool listening,
+        string noneLabel = "(none)")
+    {
+        var label = current == VirtualKey.NO_KEY ? noneLabel : current.ToString();
+
+        if (listening)
         {
-            ImGui.Button("Press any key…", new Vector2(160, 0));
-
-            foreach (var key in Plugin.KeyState.GetValidVirtualKeys())
-            {
-                if (key is VirtualKey.CONTROL or VirtualKey.SHIFT or VirtualKey.MENU) continue;
-                if (!Plugin.KeyState[key]) continue;
-
-                Config.HardTargetKey = key;
-                listeningForHardKey = false;
-                Config.Save();
-                break;
-            }
+            ImGui.Button("Press any key…##" + idSuffix, new Vector2(160, 0));
 
             if (ImGui.IsKeyPressed(ImGuiKey.Escape))
-                listeningForHardKey = false;
+            {
+                listening = false;
+                pickerArmed = false;
+                return;
+            }
+
+            if (!pickerArmed)
+            {
+                if (!AnyInputDown()) pickerArmed = true;
+                return;
+            }
+
+            foreach (var k in AllVirtualKeys)
+            {
+                if (k == VirtualKey.NO_KEY) continue;
+                if (k == VirtualKey.ESCAPE) continue;
+                if (!InputBinding.IsDownRaw(k)) continue;
+
+                setter(k);
+                Config.Save();
+                listening = false;
+                pickerArmed = false;
+                return;
+            }
         }
         else
         {
-            if (ImGui.Button(hardLabel + "##hardkey", new Vector2(160, 0)))
-                listeningForHardKey = true;
-
-            ImGui.SameLine();
-            if (ImGui.SmallButton("Clear##hardkey"))
+            if (ImGui.Button(label + "##" + idSuffix, new Vector2(160, 0)))
             {
-                Config.HardTargetKey = VirtualKey.NO_KEY;
+                listening = true;
+                pickerArmed = false;
+            }
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Clear##" + idSuffix))
+            {
+                setter(VirtualKey.NO_KEY);
                 Config.Save();
             }
         }
-        ImGui.TextDisabled("  Edge-triggered: hard-targets the cone pick (only while camera is active).");
+    }
+
+    private static bool AnyInputDown()
+    {
+        foreach (var k in AllVirtualKeys)
+        {
+            if (k == VirtualKey.NO_KEY) continue;
+            if (InputBinding.IsDownRaw(k)) return true;
+        }
+        return false;
     }
 
     // ── Reticle ──────────────────────────────────────────────────────────────

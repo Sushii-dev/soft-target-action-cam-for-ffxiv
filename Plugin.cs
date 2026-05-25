@@ -88,25 +88,32 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
-        HandleToggleKey();
-        HandleClearTargetKey();
-        HandleHardTargetKey();
-        ReconcileActiveState();
+        // Compute menu state once per frame. Handlers track edge state even
+        // while the gate is closed (so a key held across a menu open/close
+        // doesn't fire a phantom press when the menu closes), but the action
+        // itself is skipped while a menu is open.
+        var menuOpen = IsMenuOpen();
+
+        HandleToggleKey(menuOpen);
+        HandleClearTargetKey(menuOpen);
+        HandleHardTargetKey(menuOpen);
+        ReconcileActiveState(menuOpen);
         cameraController.Update();
     }
 
-    private void HandleHardTargetKey()
+    private void HandleHardTargetKey(bool menuOpen)
     {
         if (Configuration.HardTargetKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
 
-        // Track edge state every frame, even while gated by IsActive, so that
-        // holding the key across an activation transition does not fire a
-        // phantom press on the first active frame.
-        var isDown = KeyState[Configuration.HardTargetKey];
+        // Track edge state every frame, even while gated by menuOpen / IsActive,
+        // so that holding the key across a transition does not fire a phantom
+        // press on the first ungated frame.
+        var isDown = InputBinding.IsDown(Configuration.HardTargetKey);
         var rising = isDown && !hardTargetKeyWasDown;
         hardTargetKeyWasDown = isDown;
 
         if (!rising) return;
+        if (menuOpen) return;
         if (!cameraController.IsActive) return;
 
         var pick = targetSelector.CachedBest;
@@ -120,12 +127,12 @@ public sealed class Plugin : IDalamudPlugin
         finally { hardTargetSuppressor.CancelAllow(); }
     }
 
-    private void HandleClearTargetKey()
+    private void HandleClearTargetKey(bool menuOpen)
     {
         if (Configuration.ClearHardTargetKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
 
-        var isDown = KeyState[Configuration.ClearHardTargetKey];
-        if (isDown && !clearTargetKeyWasDown)
+        var isDown = InputBinding.IsDown(Configuration.ClearHardTargetKey);
+        if (isDown && !clearTargetKeyWasDown && !menuOpen)
             ClearHardTarget();
         clearTargetKeyWasDown = isDown;
     }
@@ -133,9 +140,9 @@ public sealed class Plugin : IDalamudPlugin
     private static void ClearHardTarget() => TargetManager.Target = null;
 
     // Separate user intent from actual state so menu suppression is transparent.
-    private void ReconcileActiveState()
+    private void ReconcileActiveState(bool menuOpen)
     {
-        var shouldBeActive = userWantsActive && !IsMenuOpen();
+        var shouldBeActive = userWantsActive && !menuOpen;
         if (shouldBeActive && !cameraController.IsActive)
             cameraController.Activate();
         else if (!shouldBeActive && cameraController.IsActive)
@@ -160,22 +167,29 @@ public sealed class Plugin : IDalamudPlugin
         return unitManager != null && unitManager->FocusedAddon != null;
     }
 
-    private void HandleToggleKey()
+    private void HandleToggleKey(bool menuOpen)
     {
         if (Configuration.ActivationKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
 
-        var isDown = KeyState[Configuration.ActivationKey];
+        var isDown = InputBinding.IsDown(Configuration.ActivationKey);
 
         if (Configuration.HoldToActivate)
         {
-            userWantsActive = isDown;
+            // Hold mode: only follow the key while no menu is open. Holding
+            // the key while a menu opens preserves the pre-menu intent so the
+            // cam transparently resumes on menu close. Pressing the key while
+            // a menu is open is ignored — wouldn't want Ctrl-while-typing to
+            // arm the cam on chat close.
+            if (!menuOpen) userWantsActive = isDown;
         }
         else
         {
-            if (isDown && !toggleKeyWasDown)
+            // Toggle mode: rising edge flips intent, but only when not in a
+            // menu so Ctrl pressed in chat doesn't keep toggling state.
+            if (isDown && !toggleKeyWasDown && !menuOpen)
                 userWantsActive = !userWantsActive;
-            toggleKeyWasDown = isDown;
         }
+        toggleKeyWasDown = isDown;
     }
 
     private void OnCommand(string command, string args)
