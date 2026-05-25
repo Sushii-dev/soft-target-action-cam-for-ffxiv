@@ -153,8 +153,8 @@ internal sealed unsafe class RotationDriver : IDisposable
     {
         var c = Plugin.Condition;
         return c[ConditionFlag.Unconscious]
-            || c[ConditionFlag.Crafting40]
-            || c[ConditionFlag.Gathering42]
+            || c[ConditionFlag.Crafting]
+            || c[ConditionFlag.Gathering]
             || c[ConditionFlag.RidingPillion]
             || c[ConditionFlag.PlayingMiniGame]
             || c[ConditionFlag.PlayingLordOfVerminion]
