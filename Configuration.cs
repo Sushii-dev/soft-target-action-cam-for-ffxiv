@@ -15,9 +15,39 @@ public class Configuration : IPluginConfiguration
     // Key that activates action cam (toggle or hold).
     public VirtualKey ActivationKey { get; set; } = VirtualKey.NO_KEY;
 
-    // If true, action cam is only active while the key is held down.
-    // If false, the key toggles action cam on/off.
+    // Deprecated: hold-to-activate was removed when cursor-sync became the
+    // activation model. Field kept so existing configs round-trip cleanly;
+    // the value is no longer read at runtime.
     public bool HoldToActivate { get; set; } = false;
+
+    // --- Cursor sync / auto-resume ---
+    //
+    // Cursor visibility (the game's AtkCursor.IsVisible flag) is the source of
+    // truth for whether the action camera should be active. When the cursor
+    // becomes visible while the camera is active, the camera deactivates and
+    // by default the user must press the activation key again to re-enter
+    // (sticky-off, BDO-style).
+    //
+    // The flags below carve out per-scenario exceptions: while ANY of these is
+    // ticked AND its matching game state is currently true, sticky-off is
+    // demoted to "defer" — the camera deactivates temporarily but the
+    // userWantsActive intent is preserved, so the camera re-enters
+    // automatically as soon as the cursor hides again.
+    //
+    // Alt-tab / loss of foreground focus is intentionally never exempted.
+
+    // Any in-game addon is focused (inventory, character sheet, map, chat
+    // input, etc. — anything FocusedAddon != null).
+    public bool AutoResumeAfterUI { get; set; } = false;
+
+    // Cutscene / event cinematic playback (Dalamud ConditionFlag covers).
+    public bool AutoResumeAfterCutscene { get; set; } = false;
+
+    // Generic "occupied in event" / quest dialogue states.
+    public bool AutoResumeAfterEvent { get; set; } = false;
+
+    // Zone transition / loading screen (BetweenAreas).
+    public bool AutoResumeAfterZoneTransition { get; set; } = false;
 
     // Key that clears the current hard target on press. Edge-triggered.
     public VirtualKey ClearHardTargetKey { get; set; } = VirtualKey.NO_KEY;

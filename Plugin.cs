@@ -94,17 +94,88 @@ public sealed class Plugin : IDalamudPlugin
         // which point a point-in-time check would miss the click signal).
         InputBinding.Tick();
 
-        // Compute menu state once per frame. Handlers track edge state even
-        // while the gate is closed (so a key held across a menu open/close
-        // doesn't fire a phantom press when the menu closes), but the action
-        // itself is skipped while a menu is open.
+        // menuOpen here is only used to gate key handlers — so e.g. CTRL pressed
+        // while typing in chat doesn't toggle the cam. It is NOT used to drive
+        // cam state any more; cursor visibility (via AtkCursor.IsVisible) is
+        // the source of truth for active/inactive.
         var menuOpen = IsMenuOpen();
 
         HandleToggleKey(menuOpen);
         HandleClearTargetKey(menuOpen);
         HandleHardTargetKey(menuOpen);
-        ReconcileActiveState(menuOpen);
+        ReconcileCursorSync();
         cameraController.Update();
+    }
+
+    /// <summary>
+    /// Drives the cam state from cursor visibility.
+    ///
+    /// - Active + cursor visible: cursor was force-shown by something (popup,
+    ///   menu, cutscene, alt-tab, plugin window, …). If no auto-resume
+    ///   exemption matches the current game state, sticky off: reset
+    ///   userWantsActive and deactivate. If an exemption matches, deactivate
+    ///   but keep userWantsActive=true so we auto-resume when the cursor
+    ///   hides again.
+    /// - !userWantsActive while active: user pressed the toggle to turn off.
+    /// - userWantsActive + !active + cursor hidden: activate.
+    /// </summary>
+    private void ReconcileCursorSync()
+    {
+        var cursorVisible = CameraController.IsGameCursorVisible();
+
+        if (cameraController.IsActive)
+        {
+            if (cursorVisible)
+            {
+                if (!IsCurrentlyExempted())
+                    userWantsActive = false;
+                cameraController.Deactivate();
+            }
+            else if (!userWantsActive)
+            {
+                cameraController.Deactivate();
+            }
+        }
+        else if (userWantsActive && !cursorVisible)
+        {
+            cameraController.Activate();
+        }
+    }
+
+    /// <summary>
+    /// True iff one of the user-checked auto-resume exemption conditions is
+    /// currently active. Drives the "defer" branch of ReconcileCursorSync —
+    /// while exempted, cursor-visible doesn't reset userWantsActive, so the
+    /// cam auto-resumes when the cursor hides again.
+    /// </summary>
+    private unsafe bool IsCurrentlyExempted()
+    {
+        if (Configuration.AutoResumeAfterCutscene
+            && (Condition[ConditionFlag.OccupiedInCutSceneEvent]
+                || Condition[ConditionFlag.WatchingCutscene78]))
+            return true;
+
+        if (Configuration.AutoResumeAfterEvent
+            && (Condition[ConditionFlag.OccupiedInEvent]
+                || Condition[ConditionFlag.OccupiedInQuestEvent]))
+            return true;
+
+        if (Configuration.AutoResumeAfterZoneTransition
+            && Condition[ConditionFlag.BetweenAreas])
+            return true;
+
+        if (Configuration.AutoResumeAfterUI)
+        {
+            var stage = AtkStage.Instance();
+            if (stage != null)
+            {
+                var unitManager = (AtkUnitManager*)stage->RaptureAtkUnitManager;
+                if (unitManager != null && unitManager->FocusedAddon != null)
+                    return true;
+            }
+        }
+
+        return false;
     }
 
     private void HandleHardTargetKey(bool menuOpen)
@@ -165,16 +236,6 @@ public sealed class Plugin : IDalamudPlugin
 
     private static void ClearHardTarget() => TargetManager.Target = null;
 
-    // Separate user intent from actual state so menu suppression is transparent.
-    private void ReconcileActiveState(bool menuOpen)
-    {
-        var shouldBeActive = userWantsActive && !menuOpen;
-        if (shouldBeActive && !cameraController.IsActive)
-            cameraController.Activate();
-        else if (!shouldBeActive && cameraController.IsActive)
-            cameraController.Deactivate();
-    }
-
     private static unsafe bool IsMenuOpen()
     {
         // Scripted events, cutscenes, loading screens.
@@ -197,24 +258,18 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (Configuration.ActivationKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
 
+        // Toggle only. Hold-to-activate was removed when cursor-sync became
+        // the activation model — its semantics ("active while held") don't
+        // mesh with sticky-off ("active until cursor visible, then locked off
+        // until fresh press").
+        //
+        // The menuOpen gate prevents toggling while the player is typing in
+        // chat / any focused addon — actual cam state is driven by cursor
+        // visibility in ReconcileCursorSync, but we still don't want a key in
+        // chat to flip userWantsActive.
         var isDown = InputBinding.IsDown(Configuration.ActivationKey);
-
-        if (Configuration.HoldToActivate)
-        {
-            // Hold mode: only follow the key while no menu is open. Holding
-            // the key while a menu opens preserves the pre-menu intent so the
-            // cam transparently resumes on menu close. Pressing the key while
-            // a menu is open is ignored — wouldn't want Ctrl-while-typing to
-            // arm the cam on chat close.
-            if (!menuOpen) userWantsActive = isDown;
-        }
-        else
-        {
-            // Toggle mode: rising edge flips intent, but only when not in a
-            // menu so Ctrl pressed in chat doesn't keep toggling state.
-            if (isDown && !toggleKeyWasDown && !menuOpen)
-                userWantsActive = !userWantsActive;
-        }
+        if (isDown && !toggleKeyWasDown && !menuOpen)
+            userWantsActive = !userWantsActive;
         toggleKeyWasDown = isDown;
     }
 

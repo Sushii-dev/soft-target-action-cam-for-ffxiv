@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
+using FFXIVClientStructs.FFXIV.Component.GUI;
 
 namespace ActionCamera;
 
@@ -24,9 +25,12 @@ public sealed unsafe class CameraController : IDisposable
 
     [DllImport("user32.dll")] private static extern bool GetCursorPos(out POINT p);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
-    [DllImport("user32.dll")] private static extern int  ShowCursor(bool show);
     [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr hwnd, out RECT r);
     [DllImport("user32.dll")] private static extern bool ClientToScreen(IntPtr hwnd, ref POINT p);
+    // Win32 ShowCursor intentionally dropped: cursor visibility now flows through
+    // the game's own AtkCursor module so popups / cutscenes / inactivity-hide all
+    // share state with us. Hiding via ShowCursor only worked for hardware-cursor
+    // users and provided no signal back when something external re-showed it.
 
     // ── Camera control hook ──────────────────────────────────────────────────
 
@@ -49,6 +53,17 @@ public sealed unsafe class CameraController : IDisposable
     private bool cursorHidden;
     private POINT screenCenter;
     private POINT savedCursorPos;
+
+    // Set true when Activate() runs; cleared on the first Update frame where
+    // the cursor delta is non-zero. That single sample is discarded — it's the
+    // XWayland warp-staleness spike, where SetCursorPos(center) updates
+    // XWayland's cache immediately but the X server pointer doesn't resync
+    // until the next real motion event. The first motion event then surfaces
+    // a delta the size of "wherever the cursor was left while disabled" → a
+    // one-frame camera twitch proportional to that distance. Skipping that
+    // sample costs ~16ms of input on first move; on Windows where the bug
+    // doesn't exist, it's still a 1-frame skip but invisible.
+    private bool firstMotionAfterActivate;
 
     public bool IsActive => isActive;
 
@@ -92,12 +107,9 @@ public sealed unsafe class CameraController : IDisposable
         RecalcScreenCenter();
         SetCursorPos(screenCenter.X, screenCenter.Y);
 
-        if (!cursorHidden)
-        {
-            ShowCursor(false);
-            cursorHidden = true;
-        }
+        HideGameCursor();
 
+        firstMotionAfterActivate = true;
         isActive = true;
         Plugin.Log.Debug("[ActionCamera] Activated.");
     }
@@ -106,16 +118,44 @@ public sealed unsafe class CameraController : IDisposable
     {
         if (!isActive) return;
         isActive = false;
+        firstMotionAfterActivate = false;
 
-        if (cursorHidden)
-        {
-            ShowCursor(true);
-            cursorHidden = false;
-        }
+        ShowGameCursor();
 
         SetCursorPos(savedCursorPos.X, savedCursorPos.Y);
         targetSelector.ClearMouseOverHighlight();
         Plugin.Log.Debug("[ActionCamera] Deactivated.");
+    }
+
+    private void HideGameCursor()
+    {
+        if (cursorHidden) return;
+        var stage = AtkStage.Instance();
+        if (stage == null) return;
+        stage->AtkCursor.Hide();
+        cursorHidden = true;
+    }
+
+    private void ShowGameCursor()
+    {
+        if (!cursorHidden) return;
+        var stage = AtkStage.Instance();
+        if (stage != null) stage->AtkCursor.Show();
+        cursorHidden = false;
+    }
+
+    /// <summary>
+    /// True iff FFXIV currently considers the cursor visible to the player.
+    /// Read this from the game's AtkCursor (the same field SimpleTweaks,
+    /// Dalamud, and FFXIV-VR treat as canonical). Reflects popups, cutscenes,
+    /// inactivity-hide and our own Hide/Show calls uniformly — unlike the
+    /// Win32 ShowCursor counter which only governs the OS hardware cursor.
+    /// </summary>
+    public static bool IsGameCursorVisible()
+    {
+        var stage = AtkStage.Instance();
+        if (stage == null) return false;
+        return stage->AtkCursor.IsVisible;
     }
 
     // ── Per-frame update ─────────────────────────────────────────────────────
@@ -127,9 +167,27 @@ public sealed unsafe class CameraController : IDisposable
 
         // Read & reset mouse position each frame.
         GetCursorPos(out var cur);
-        var dx = (cur.X - screenCenter.X) * config.MouseSensitivityX;
-        var dy = (cur.Y - screenCenter.Y) * config.MouseSensitivityY;
+        var rawDx = cur.X - screenCenter.X;
+        var rawDy = cur.Y - screenCenter.Y;
+        var dx = rawDx * config.MouseSensitivityX;
+        var dy = rawDy * config.MouseSensitivityY;
         SetCursorPos(screenCenter.X, screenCenter.Y);
+
+        // Spike guard: on XWayland, SetCursorPos(center) updates XWayland's
+        // cached cursor position but the X server pointer can lag — the cache
+        // resyncs on the next real motion event, surfacing a delta the size
+        // of (last-known X server pos − center). That's a one-frame twitch
+        // proportional to how far the cursor was moved while the cam was
+        // disabled. Discarding the first non-zero delta after Activate kills
+        // the spike without affecting steady-state input.
+        if (firstMotionAfterActivate)
+        {
+            if (rawDx != 0 || rawDy != 0)
+                firstMotionAfterActivate = false;
+            if (config.AutoTarget)
+                targetSelector.Update(GetCameraHRotation());
+            return;
+        }
 
         ApplyCameraRotation(dx, dy);
 

@@ -71,14 +71,47 @@ public sealed class ConfigWindow : Window, IDisposable
 
         ImGui.Spacing();
 
-        var holdMode = Config.HoldToActivate;
-        if (ImGui.Checkbox("Hold to activate (release to deactivate)", ref holdMode))
+        ImGui.TextDisabled("  Press to toggle on. While on, the camera stays active until");
+        ImGui.TextDisabled("  the cursor becomes visible (popup, menu, alt-tab, etc.) — then");
+        ImGui.TextDisabled("  the camera turns off and stays off until you press this key again.");
+
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Auto-resume exemptions");
+        ImGui.TextDisabled("  By default any cursor-visible event sticks the cam off. Tick a box");
+        ImGui.TextDisabled("  to keep the activation key's intent across that scenario — the cam");
+        ImGui.TextDisabled("  will deactivate while the cursor is visible and auto-resume when");
+        ImGui.TextDisabled("  the cursor hides again.");
+        ImGui.Spacing();
+
+        var arUI = Config.AutoResumeAfterUI;
+        if (ImGui.Checkbox("After closing UI (inventory, map, chat, ...)", ref arUI))
         {
-            Config.HoldToActivate = holdMode;
+            Config.AutoResumeAfterUI = arUI;
             Config.Save();
         }
 
-        ImGui.TextDisabled("  Unchecked = key toggles action cam on/off.");
+        var arCut = Config.AutoResumeAfterCutscene;
+        if (ImGui.Checkbox("After cutscenes", ref arCut))
+        {
+            Config.AutoResumeAfterCutscene = arCut;
+            Config.Save();
+        }
+
+        var arEvt = Config.AutoResumeAfterEvent;
+        if (ImGui.Checkbox("After dialogues / scripted events", ref arEvt))
+        {
+            Config.AutoResumeAfterEvent = arEvt;
+            Config.Save();
+        }
+
+        var arZone = Config.AutoResumeAfterZoneTransition;
+        if (ImGui.Checkbox("After zone transitions / loading screens", ref arZone))
+        {
+            Config.AutoResumeAfterZoneTransition = arZone;
+            Config.Save();
+        }
+
+        ImGui.TextDisabled("  Alt-tab / loss of focus is never exempted.");
     }
 
     // ── Mouse ────────────────────────────────────────────────────────────────
