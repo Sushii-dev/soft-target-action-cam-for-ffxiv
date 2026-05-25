@@ -41,13 +41,11 @@ public sealed unsafe class CameraController : IDisposable
 
     private CameraControlType CameraControlTypeDetour()
     {
-        // We want the game's native RMB camera rotation to keep working while
-        // RMB is held — that's the gesture the user expects to "look around"
-        // with. So even when our cam is active, only suppress the game's own
-        // camera control when RMB is NOT held. While RMB is held, return the
-        // original so the game rotates the camera; we do cone targeting and
-        // character facing on top via the rbHeld branch in Update().
-        if (isActive && !IsRmbHeld()) return CameraControlType.None;
+        // Let the game drive camera rotation while RMB or LMB is held (LMB
+        // can be bound to camera-rotate in FFXIV's mouse settings). When no
+        // mouse-camera button is held but our cam is active, we own the
+        // input — return None to suppress the game's native camera control.
+        if (isActive && !IsMouseCameraHeld()) return CameraControlType.None;
         return cameraControlHook!.Original();
     }
 
@@ -134,7 +132,7 @@ public sealed unsafe class CameraController : IDisposable
         // camera control — that would fight the game's lock and produce
         // weird input. The rbHeld branch in Update() skips our cursor logic
         // entirely, so the centre warp isn't needed while RMB is active.
-        if (!IsRmbHeld())
+        if (!IsMouseCameraHeld())
         {
             SetCursorPos(screenCenter.X, screenCenter.Y);
         }
@@ -211,6 +209,21 @@ public sealed unsafe class CameraController : IDisposable
     /// </summary>
     public static bool IsRmbHeld() => InputBinding.IsDownRaw(VirtualKey.RBUTTON);
 
+    /// <summary>
+    /// True while the left mouse button is physically held. Some users bind
+    /// LMB to camera rotation in FFXIV's mouse settings; in that case LMB
+    /// behaves the same as RMB and would fight our cursor lock if we don't
+    /// step aside.
+    /// </summary>
+    public static bool IsLmbHeld() => InputBinding.IsDownRaw(VirtualKey.LBUTTON);
+
+    /// <summary>
+    /// True when any mouse button the game might use for camera-rotate is
+    /// held. While true, our cursor-warp + delta-based rotation should be
+    /// skipped to avoid fighting the game's own cursor lock.
+    /// </summary>
+    public static bool IsMouseCameraHeld() => IsRmbHeld() || IsLmbHeld();
+
     // ── Per-frame update ─────────────────────────────────────────────────────
 
     public void Update()
@@ -218,17 +231,18 @@ public sealed unsafe class CameraController : IDisposable
         if (!isActive) return;
         if (!Plugin.ClientState.IsLoggedIn) { Deactivate(); return; }
 
-        // RMB-hold: the game owns cursor lock and camera rotation. Skip our
-        // cursor-warp + delta-based rotation entirely — they would fight the
-        // game's lock and produce a constant non-zero delta from centre to
-        // the click point, spinning the camera. Cone targeting and character
-        // facing still run, using the game's HRotation which the game is
-        // updating from RMB input.
+        // Mouse-button-held (RMB or LMB): the game owns cursor lock and
+        // camera rotation. Skip our cursor-warp + delta-based rotation
+        // entirely — they would fight the game's lock and produce a
+        // constant non-zero delta from centre to the click point,
+        // spinning the camera. Cone targeting and character facing still
+        // run, using the game's HRotation which the game is updating
+        // from the mouse input.
         //
-        // Re-arm both spike-guard stages so when RMB releases the next
-        // motion absorbs the warp staleness that would otherwise hit our
-        // reawakening cursor logic.
-        if (IsRmbHeld())
+        // Re-arm both spike-guard stages so when the mouse button
+        // releases the next motion absorbs the warp staleness that would
+        // otherwise hit our reawakening cursor logic.
+        if (IsMouseCameraHeld())
         {
             var hrot = GetCameraHRotation();
             if (config.AutoTarget) targetSelector.Update(hrot);

@@ -27,8 +27,7 @@ public sealed class ConfigWindow : Window, IDisposable
     private static readonly VirtualKey[] AllVirtualKeys = (VirtualKey[])Enum.GetValues(typeof(VirtualKey));
 
     public ConfigWindow(Plugin plugin)
-        : base("Action Camera Settings###ActionCameraConfig",
-               ImGuiWindowFlags.NoScrollbar | ImGuiWindowFlags.NoScrollWithMouse)
+        : base("Action Camera Settings###ActionCameraConfig")
     {
         this.plugin = plugin;
         SizeConstraints = new WindowSizeConstraints
