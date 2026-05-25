@@ -114,7 +114,12 @@ internal static class InputBinding
         }
         else
         {
-            if (io.WantCaptureKeyboard) return false;
+            // WantTextInput is stricter than WantCaptureKeyboard — it only
+            // fires when an ImGui text field actually has focus. Using
+            // WantCaptureKeyboard would suppress modifier keys (CONTROL)
+            // any time ImGui tracks them for shortcuts, which dropped the
+            // activation key intermittently.
+            if (io.WantTextInput) return false;
         }
         return true;
     }

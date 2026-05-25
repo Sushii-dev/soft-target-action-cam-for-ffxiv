@@ -117,49 +117,75 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     /// <summary>
-    /// Cam state mirrors cursor visibility — cursor hidden ⇒ cam active —
-    /// PLUS an explicit RMB-held branch so the game's native "right-click to
-    /// rotate camera" gesture also gives the user cam features (cone target,
-    /// character facing) even though it doesn't necessarily flip the UI-layer
-    /// AtkCursor.IsVisible flag.
+    /// Reconciliation between the user's cam intent, cursor visibility, RMB
+    /// state, and the various game systems that can independently re-assert
+    /// AtkCursor.IsVisible.
     ///
-    /// userWantsActive is consulted only for intent management while cursor
-    /// is visible:
-    ///   - exempted condition active: defer (cam off, intent kept).
-    ///   - just-cleared exemption + cursor still visible: auto-resume by
-    ///     calling Hide() again.
-    ///   - sustained cursor-visible without exemption: sticky off (intent
-    ///     reset, fresh activation press required).
+    /// The big lesson from real-world testing: writing to MouseOverTarget (so
+    /// the cone-pick gets the yellow outline + ReAction's Field Target
+    /// pronoun) causes FFXIV's UI module to re-assert AtkCursor.IsVisible on
+    /// the next tick — the game treats "user is hovering an interactable" as
+    /// "show the cursor". One Hide() per CTRL press wasn't enough; the game
+    /// would flip IsVisible back true on the very next tick and our
+    /// sticky-off would tear the cam back down.
+    ///
+    /// So sticky-off is no longer triggered by raw cursor-visible. It only
+    /// fires when cursor visible + a tracked menu/popup/cutscene condition
+    /// is open (IsMenuOpen). When the cursor's visible but no menu is open,
+    /// we re-Hide each tick to fight the game's re-assert. This runs before
+    /// the game renders, so there's no flicker.
+    ///
+    /// RMB-hold short-circuits the re-Hide branch — RMB legitimately wants
+    /// the cursor's visibility state to be whatever the game says, and we
+    /// don't want to fight it during the gesture. shouldBeActive forces
+    /// the cam on regardless of cursor flags while RMB is held.
     /// </summary>
     private void ReconcileCursorSync()
     {
         var cursorVisible = CameraController.IsGameCursorVisible();
+        var rbHeld = CameraController.IsRmbHeld();
         var exempted = IsCurrentlyExempted();
 
-        if (cursorVisible && userWantsActive)
+        // Intent maintenance: only when we have an explicit intent AND the
+        // cursor is currently visible AND RMB isn't held (RMB is allowed to
+        // own cursor state during the gesture).
+        if (userWantsActive && cursorVisible && !rbHeld)
         {
-            if (exempted)
+            if (IsMenuOpen())
             {
-                // Defer.
-            }
-            else if (wasExemptedLastTick)
-            {
-                cameraController.RequestHideCursor();
+                // Genuine UI / cutscene / popup. The cursor-visible event is
+                // user-initiated or game-mandated; treat as sticky-off (or
+                // defer / auto-resume based on the exemption checkboxes).
+                if (exempted)
+                {
+                    // Defer — cam off this tick, intent preserved.
+                }
+                else if (wasExemptedLastTick)
+                {
+                    // Exemption just cleared — re-Hide to auto-resume.
+                    cameraController.RequestHideCursor();
+                }
+                else
+                {
+                    // Sticky-off — fresh activation key press required.
+                    userWantsActive = false;
+                }
             }
             else
             {
-                userWantsActive = false;
+                // Cursor visible but no UI / menu is open. The game's UI
+                // module is re-asserting visibility on its own (typically
+                // because our MouseOverTarget write makes it think the user
+                // is hovering an interactable). Re-Hide to keep the cam
+                // session alive — user intent is unchanged.
+                cameraController.RequestHideCursor();
             }
         }
         wasExemptedLastTick = exempted;
 
-        // Re-read after the potential auto-resume Hide() above.
+        // Re-read cursor visibility after the potential re-Hide above.
         cursorVisible = CameraController.IsGameCursorVisible();
-        var rbHeld = CameraController.IsRmbHeld();
 
-        // Cam runs when the UI says cursor is hidden (CTRL-driven session)
-        // OR when RMB is held (game-driven camera rotation, we add cone +
-        // facing on top).
         var shouldBeActive = !cursorVisible || rbHeld;
 
         if (shouldBeActive && !cameraController.IsActive)
