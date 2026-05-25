@@ -310,17 +310,18 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (Configuration.ActivationKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
 
-        // Toggle only. Hold-to-activate was removed when cursor-sync became
-        // the activation model.
+        // No menuOpen gate. The activation key must work in EVERY scenario —
+        // including inventory / character / map / skill tree, all of which
+        // set FocusedAddon and would otherwise be blocked by IsMenuOpen().
+        // The user needs to be able to free the cursor at any time.
         //
-        // The menuOpen gate prevents toggling while the player is typing in
-        // chat / any focused addon — actual cam state mirrors cursor
-        // visibility, but we still don't want a key in chat to swap the
-        // hide/show state.
+        // Trade-off: a chord like Ctrl+V while typing in chat will fire this
+        // toggle. Pressing the key again reverts. ImGui text fields are
+        // still protected by InputBinding.IsDown's WantTextInput check.
         var isDown = InputBinding.IsDown(Configuration.ActivationKey);
         var rising = isDown && !toggleKeyWasDown;
         toggleKeyWasDown = isDown;
-        if (!rising || menuOpen) return;
+        if (!rising) return;
 
         userWantsActive = !userWantsActive;
         if (userWantsActive)
