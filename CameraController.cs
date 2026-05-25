@@ -114,6 +114,7 @@ public sealed unsafe class CameraController : IDisposable
         }
 
         SetCursorPos(savedCursorPos.X, savedCursorPos.Y);
+        targetSelector.ClearMouseOverHighlight();
         Plugin.Log.Debug("[ActionCamera] Deactivated.");
     }
 

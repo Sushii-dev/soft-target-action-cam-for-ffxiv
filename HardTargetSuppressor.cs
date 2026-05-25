@@ -23,6 +23,17 @@ internal sealed unsafe class HardTargetSuppressor : IDisposable
     private readonly TargetSelector selector;
     private readonly Func<bool> isCameraActive;
 
+    // One-shot bypass: when set, the very next SetHardTarget call passes through
+    // to the original regardless of suppression state. Consumed inside the detour.
+    // Callers should still wrap their SetHardTarget-triggering assignment in
+    // try/finally + CancelAllow() so the flag can never leak past its intended
+    // call (defence against any edge case where the setter short-circuits without
+    // invoking the native function).
+    private bool allowNext;
+
+    public void AllowNext()   => allowNext = true;
+    public void CancelAllow() => allowNext = false;
+
     public HardTargetSuppressor(Configuration config, TargetSelector selector, Func<bool> isCameraActive)
     {
         this.config = config;
@@ -42,6 +53,12 @@ internal sealed unsafe class HardTargetSuppressor : IDisposable
 
     private bool Detour(TargetSystem* ts, GameObject* target, bool ign, bool a4, int a5)
     {
+        if (allowNext)
+        {
+            allowNext = false;
+            return hook!.Original(ts, target, ign, a4, a5);
+        }
+
         // Only suppress the precise "promote soft to hard on action use" case:
         //   - feature toggled on
         //   - cone is currently active

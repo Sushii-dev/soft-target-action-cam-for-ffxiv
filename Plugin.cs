@@ -41,6 +41,7 @@ public sealed class Plugin : IDalamudPlugin
     private bool userWantsActive;
     private bool toggleKeyWasDown;
     private bool clearTargetKeyWasDown;
+    private bool hardTargetKeyWasDown;
 
     public Plugin()
     {
@@ -89,8 +90,34 @@ public sealed class Plugin : IDalamudPlugin
 
         HandleToggleKey();
         HandleClearTargetKey();
+        HandleHardTargetKey();
         ReconcileActiveState();
         cameraController.Update();
+    }
+
+    private void HandleHardTargetKey()
+    {
+        if (Configuration.HardTargetKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
+
+        // Track edge state every frame, even while gated by IsActive, so that
+        // holding the key across an activation transition does not fire a
+        // phantom press on the first active frame.
+        var isDown = KeyState[Configuration.HardTargetKey];
+        var rising = isDown && !hardTargetKeyWasDown;
+        hardTargetKeyWasDown = isDown;
+
+        if (!rising) return;
+        if (!cameraController.IsActive) return;
+
+        var pick = targetSelector.CachedBest;
+        if (pick == null) return;
+
+        // Bypass the suppression hook for this single SetHardTarget call.
+        // try/finally guarantees the bypass flag is cleared even if the Dalamud
+        // setter ever short-circuits without invoking the native function.
+        hardTargetSuppressor.AllowNext();
+        try     { TargetManager.Target = pick; }
+        finally { hardTargetSuppressor.CancelAllow(); }
     }
 
     private void HandleClearTargetKey()

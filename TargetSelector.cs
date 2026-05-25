@@ -15,9 +15,16 @@ public sealed unsafe class TargetSelector
     private const int ScanIntervalFrames = 3;
     private int frameCounter = ScanIntervalFrames;
     private IGameObject? cachedBest;
+    // Entity whose outline we last painted yellow. Tracked so we can reset its
+    // DrawObject.OutlineColor when the cone moves to a different target or empty —
+    // the game's own outline updater doesn't clean up direct Highlight() writes.
+    private ulong lastHighlightedId;
 
     // Exposed for HardTargetSuppressor: address of the cone's current pick, or 0.
     public nint CachedBestAddress => cachedBest?.Address ?? nint.Zero;
+
+    // Exposed for the manual hard-target key. Null when no valid candidate.
+    public IGameObject? CachedBest => cachedBest;
 
     private readonly Configuration config;
 
@@ -46,13 +53,26 @@ public sealed unsafe class TargetSelector
             //      *before* UpdateOutline runs. Highlight writes
             //      DrawObject.OutlineColor directly; must be re-applied each
             //      frame because UpdateOutline resets prior highlights.
+            // The game's outline-info cleanup never touches entities we
+            // painted manually, so we have to reset the previous target's
+            // color ourselves whenever the cone pick changes (or empties).
             var ts = FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance();
             var go = cachedBest != null
                 ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)cachedBest.Address
                 : null;
+            var curId = cachedBest?.GameObjectId ?? 0ul;
+            if (lastHighlightedId != 0 && lastHighlightedId != curId)
+                ResetHighlight(lastHighlightedId);
             ts->MouseOverTarget = go;
             if (go != null)
                 go->Highlight(FFXIVClientStructs.FFXIV.Client.Game.Object.ObjectHighlightColor.Yellow);
+            lastHighlightedId = curId;
+        }
+        else if (lastHighlightedId != 0)
+        {
+            // Toggle went off while a highlight was active — clean it up.
+            ResetHighlight(lastHighlightedId);
+            lastHighlightedId = 0;
         }
         if (config.WriteSoftTarget) Plugin.TargetManager.SoftTarget = cachedBest;
         if (config.WriteHardTarget) Plugin.TargetManager.Target     = cachedBest;
@@ -104,6 +124,31 @@ public sealed unsafe class TargetSelector
         }
 
         return bestObj;
+    }
+
+    /// <summary>
+    /// Clears any yellow outline we painted. Call on deactivation / dispose
+    /// so the previous cone target doesn't keep a stale highlight.
+    /// </summary>
+    public void ClearMouseOverHighlight()
+    {
+        if (lastHighlightedId != 0)
+        {
+            ResetHighlight(lastHighlightedId);
+            lastHighlightedId = 0;
+        }
+        cachedBest = null;
+    }
+
+    private static void ResetHighlight(ulong objectId)
+    {
+        foreach (var obj in Plugin.ObjectTable)
+        {
+            if (obj.GameObjectId != objectId) continue;
+            ((FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address)
+                ->Highlight(FFXIVClientStructs.FFXIV.Client.Game.Object.ObjectHighlightColor.None);
+            return;
+        }
     }
 
     private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer, bool requireAggro)

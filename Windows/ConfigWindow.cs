@@ -14,6 +14,7 @@ public sealed class ConfigWindow : Window, IDisposable
     // Temporary buffer for the key-picker popup.
     private bool listeningForKey;
     private bool listeningForClearKey;
+    private bool listeningForHardKey;
 
     public ConfigWindow(Plugin plugin)
         : base("Action Camera Settings###ActionCameraConfig",
@@ -291,6 +292,46 @@ public sealed class ConfigWindow : Window, IDisposable
             }
         }
         ImGui.TextDisabled("  Edge-triggered: clears the current hard target on key down.");
+
+        ImGui.Spacing();
+        ImGui.Text("Hard target key:");
+        ImGui.SameLine();
+
+        var hardLabel = Config.HardTargetKey == VirtualKey.NO_KEY
+            ? "(none)"
+            : Config.HardTargetKey.ToString();
+
+        if (listeningForHardKey)
+        {
+            ImGui.Button("Press any key…", new Vector2(160, 0));
+
+            foreach (var key in Plugin.KeyState.GetValidVirtualKeys())
+            {
+                if (key is VirtualKey.CONTROL or VirtualKey.SHIFT or VirtualKey.MENU) continue;
+                if (!Plugin.KeyState[key]) continue;
+
+                Config.HardTargetKey = key;
+                listeningForHardKey = false;
+                Config.Save();
+                break;
+            }
+
+            if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+                listeningForHardKey = false;
+        }
+        else
+        {
+            if (ImGui.Button(hardLabel + "##hardkey", new Vector2(160, 0)))
+                listeningForHardKey = true;
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Clear##hardkey"))
+            {
+                Config.HardTargetKey = VirtualKey.NO_KEY;
+                Config.Save();
+            }
+        }
+        ImGui.TextDisabled("  Edge-triggered: hard-targets the cone pick (only while camera is active).");
     }
 
     // ── Reticle ──────────────────────────────────────────────────────────────

@@ -22,6 +22,12 @@ public class Configuration : IPluginConfiguration
     // Key that clears the current hard target on press. Edge-triggered.
     public VirtualKey ClearHardTargetKey { get; set; } = VirtualKey.NO_KEY;
 
+    // Key that hard-targets the cone's current pick. Edge-triggered.
+    // Only fires while the action camera is active (otherwise the cone pick is
+    // stale — TargetSelector.Update is only called while the camera is active).
+    // Punches through SuppressSoftToHardPromotion via a one-shot bypass on the hook.
+    public VirtualKey HardTargetKey { get; set; } = VirtualKey.NO_KEY;
+
     // --- Mouse sensitivity ---
 
     public float MouseSensitivityX { get; set; } = 0.003f;
