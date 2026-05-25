@@ -61,17 +61,23 @@ internal sealed unsafe class HardTargetSuppressor : IDisposable
         }
 
         // Suppress LMB-driven SetHardTarget calls while the camera is active.
-        // FFXIV's click-to-target / click-empty-to-clear fires SetHardTarget on
-        // the click frame while LBUTTON is still physically held, so checking
-        // GetAsyncKeyState here reliably distinguishes click-source calls from
-        // keybind / Tab / plugin-source ones. Covers both the "set hard target
-        // to enemy under cursor" and "clear hard target on empty click" cases.
+        // FFXIV uses two distinct paths for click-targeting:
+        //   • Initial set (no existing hard target): SetHardTarget fires on
+        //     LMB-down while LBUTTON is physically held.
+        //   • Swap / clear-on-empty (existing hard target): the call is
+        //     deferred until LMB-up, so by the time the hook fires LBUTTON
+        //     reads "up" and a point-in-time check misses it.
+        // Tracking a small post-release activity window from per-frame Tick()
+        // catches both paths. Self-mark inline as well so the very first frame
+        // after plugin load (before Tick has run) still gets the signal.
         // AllowNext is checked first above, so our own hard-target keybind
-        // continues to work even if it's bound to a mouse button while LMB is
-        // simultaneously held.
+        // continues to work even bound to a mouse button while LMB is held.
+        if (InputBinding.IsDownRaw(VirtualKey.LBUTTON))
+            InputBinding.MarkLmbActive();
+
         if (config.SuppressClickHardTargetInCam
             && isCameraActive()
-            && InputBinding.IsDownRaw(VirtualKey.LBUTTON))
+            && InputBinding.WasLmbDownWithin(200))
         {
             return false;
         }

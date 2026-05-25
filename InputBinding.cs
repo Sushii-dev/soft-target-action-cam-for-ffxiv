@@ -47,6 +47,41 @@ internal static class InputBinding
     public static bool IsGameFocused()
         => GameHwnd != IntPtr.Zero && GetForegroundWindow() == GameHwnd;
 
+    // ── LMB activity tracking ────────────────────────────────────────────────
+    //
+    // FFXIV's "click-to-swap" pipeline (replace existing hard target via LMB)
+    // doesn't call SetHardTarget while LBUTTON is still physically held — the
+    // call appears to be deferred until LMB-up. By the time the SetHardTarget
+    // hook fires, GetAsyncKeyState(LBUTTON) reports "up" and a point-in-time
+    // check misses the click-source signal entirely. Tracking the last moment
+    // LBUTTON was observed held lets the suppressor check a small post-release
+    // window instead.
+    //
+    // Updated from two places:
+    //   • Tick() — called once per framework update, polls the current state.
+    //     Catches holds even if no SetHardTarget fires during the hold.
+    //   • MarkLmbActive() — called from the SetHardTarget detour itself when
+    //     it observes LBUTTON physically down. Defensive: catches the very
+    //     first-frame case before Tick has had a chance to run.
+
+    private static long lastLmbActiveUtcTicks;
+
+    public static void MarkLmbActive() => lastLmbActiveUtcTicks = DateTime.UtcNow.Ticks;
+
+    public static bool WasLmbDownWithin(int milliseconds)
+    {
+        var elapsedTicks = DateTime.UtcNow.Ticks - lastLmbActiveUtcTicks;
+        return elapsedTicks >= 0
+            && TimeSpan.FromTicks(elapsedTicks).TotalMilliseconds < milliseconds;
+    }
+
+    public static void Tick()
+    {
+        if (!IsGameFocused()) return;
+        if ((GetAsyncKeyState((int)VirtualKey.LBUTTON) & 0x8000) != 0)
+            MarkLmbActive();
+    }
+
     public static bool IsMouseButton(VirtualKey k)
         => k is VirtualKey.LBUTTON or VirtualKey.RBUTTON or VirtualKey.MBUTTON
               or VirtualKey.XBUTTON1 or VirtualKey.XBUTTON2;

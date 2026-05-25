@@ -88,6 +88,12 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
 
+        // Refresh InputBinding's LMB activity timestamp. Used by the click-
+        // target suppressor to cover FFXIV's deferred SetHardTarget pipeline
+        // (the swap-existing-hard-target path fires the call on LMB-up, by
+        // which point a point-in-time check would miss the click signal).
+        InputBinding.Tick();
+
         // Compute menu state once per frame. Handlers track edge state even
         // while the gate is closed (so a key held across a menu open/close
         // doesn't fire a phantom press when the menu closes), but the action
