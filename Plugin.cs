@@ -36,6 +36,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly TargetSelector targetSelector;
     private readonly ReticleOverlay reticleOverlay;
     private readonly HardTargetSuppressor hardTargetSuppressor;
+    private readonly RotationDriver rotationDriver;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -56,6 +57,7 @@ public sealed class Plugin : IDalamudPlugin
         cameraController     = new CameraController(Configuration, targetSelector);
         reticleOverlay       = new ReticleOverlay(cameraController, Configuration);
         hardTargetSuppressor = new HardTargetSuppressor(Configuration, targetSelector, () => cameraController.IsActive);
+        rotationDriver       = new RotationDriver(Configuration, () => cameraController.IsActive, cameraController.GetCameraHRotation);
 
         ConfigWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(ConfigWindow);
@@ -81,6 +83,7 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.RemoveAllWindows();
         ConfigWindow.Dispose();
         hardTargetSuppressor.Dispose();
+        rotationDriver.Dispose();
         cameraController.Dispose();
     }
 
@@ -114,6 +117,8 @@ public sealed class Plugin : IDalamudPlugin
         HandleHardTargetKey(menuOpen);
         ReconcileCursorSync();
         cameraController.Update();
+        // RotationDriver runs after camera so it reads the freshly-updated yaw.
+        rotationDriver.Update();
     }
 
     /// <summary>

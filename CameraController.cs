@@ -4,7 +4,6 @@ using System.Numerics;
 using System.Runtime.InteropServices;
 using Dalamud.Game.ClientState.Keys;
 using Dalamud.Hooking;
-using FFXIVClientStructs.FFXIV.Client.Game.Character;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
@@ -246,7 +245,8 @@ public sealed unsafe class CameraController : IDisposable
         {
             var hrot = GetCameraHRotation();
             if (config.AutoTarget) targetSelector.Update(hrot);
-            if (config.RotateCharacterWithCamera) SetPlayerFacing(hrot);
+            // Character rotation is driven by RotationDriver each frame; no
+            // per-handler call needed here.
             firstMotionAfterActivate = true;
             framesSinceFirstMotion = 0;
             return;
@@ -323,30 +323,21 @@ public sealed unsafe class CameraController : IDisposable
         var newV = *vRot + (config.InvertY ? dy : -dy);
         *vRot = Math.Clamp(newV, config.MinVRotationOverride, config.MaxVRotationOverride);
 
-        if (config.RotateCharacterWithCamera)
-            SetPlayerFacing(*hRot);
+        // Character/mount rotation is handled by RotationDriver, which cooperates
+        // with the game's own movement and flight pipelines via hooks rather than
+        // racing it via raw field writes. Keeping the work out of here means
+        // there's a single source of truth for player rotation each frame.
     }
 
-    private float GetCameraHRotation()
+    /// <summary>
+    /// Current camera yaw in radians. Public so RotationDriver can read it.
+    /// </summary>
+    public float GetCameraHRotation()
     {
         const int OffHRot = 0x130;
         var cam = CameraManager.Instance()->CurrentCamera;
         if (cam == null) return 0f;
         return *(float*)((nint)cam + OffHRot);
-    }
-
-    // ── Character facing ─────────────────────────────────────────────────────
-
-    private void SetPlayerFacing(float cameraYaw)
-    {
-        var localPlayer = Plugin.ObjectTable.LocalPlayer;
-        if (localPlayer == null) return;
-
-        // BattleChara* → Character → GameObject → Rotation (float, radians).
-        // The configurable offset converts camera-forward to character-forward;
-        // default is π because the camera sits *behind* the player.
-        var chara = (BattleChara*)localPlayer.Address;
-        chara->Character.GameObject.Rotation = WrapAngle(cameraYaw + config.CharacterFacingOffset);
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
