@@ -61,16 +61,20 @@ public sealed unsafe class CameraController : IDisposable
     private POINT screenCenter;
     private POINT savedCursorPos;
 
-    // Set true when Activate() runs; cleared on the first Update frame where
-    // the cursor delta is non-zero. That single sample is discarded — it's the
-    // XWayland warp-staleness spike, where SetCursorPos(center) updates
-    // XWayland's cache immediately but the X server pointer doesn't resync
-    // until the next real motion event. The first motion event then surfaces
-    // a delta the size of "wherever the cursor was left while disabled" → a
-    // one-frame camera twitch proportional to that distance. Skipping that
-    // sample costs ~16ms of input on first move; on Windows where the bug
-    // doesn't exist, it's still a 1-frame skip but invisible.
-    private bool firstMotionAfterActivate;
+    // Counter for the post-activation discard window. Reset to 0 on Activate
+    // and on RMB-release, incremented each Update frame. While <= the discard
+    // length, cursor deltas are dropped — they're the XWayland warp-staleness
+    // spike, where SetCursorPos(center) updates XWayland's cache immediately
+    // but the X server pointer doesn't resync until the next real motion
+    // event. When the user is actively moving the cursor at activation, the
+    // staleness compounds across multiple frames as motion events keep
+    // resyncing the cache from the stale X server position. A single-frame
+    // discard isn't enough; a fixed-frame window absorbs all the resync
+    // spikes. ~83ms at 60fps — imperceptible. On Windows where the bug
+    // doesn't exist, you lose ~83ms of input per activation, still
+    // invisible.
+    private int framesSinceActivate;
+    private const int ActivateDiscardFrames = 5;
 
     public bool IsActive => isActive;
 
@@ -126,9 +130,9 @@ public sealed unsafe class CameraController : IDisposable
         if (!IsRmbHeld())
         {
             SetCursorPos(screenCenter.X, screenCenter.Y);
-            firstMotionAfterActivate = true;
         }
 
+        framesSinceActivate = 0;
         isActive = true;
         Plugin.Log.Debug("[ActionCamera] Activated.");
     }
@@ -137,7 +141,7 @@ public sealed unsafe class CameraController : IDisposable
     {
         if (!isActive) return;
         isActive = false;
-        firstMotionAfterActivate = false;
+        framesSinceActivate = 0;
 
         targetSelector.ClearMouseOverHighlight();
         Plugin.Log.Debug("[ActionCamera] Deactivated.");
@@ -211,14 +215,16 @@ public sealed unsafe class CameraController : IDisposable
         // the click point, spinning the camera. Cone targeting and character
         // facing still run, using the game's HRotation which the game is
         // updating from RMB input.
+        //
+        // Reset the post-activation discard counter each frame while RMB is
+        // held so when RMB releases the next few frames absorb the warp
+        // staleness that would otherwise hit our reawakening cursor logic.
         if (IsRmbHeld())
         {
             var hrot = GetCameraHRotation();
             if (config.AutoTarget) targetSelector.Update(hrot);
             if (config.RotateCharacterWithCamera) SetPlayerFacing(hrot);
-            // Re-arm the spike guard so the next CTRL-driven session ignores
-            // the first stale delta. RMB doesn't move our virtual centre.
-            firstMotionAfterActivate = true;
+            framesSinceActivate = 0;
             return;
         }
 
@@ -230,17 +236,17 @@ public sealed unsafe class CameraController : IDisposable
         var dy = rawDy * config.MouseSensitivityY;
         SetCursorPos(screenCenter.X, screenCenter.Y);
 
-        // Spike guard: on XWayland, SetCursorPos(center) updates XWayland's
-        // cached cursor position but the X server pointer can lag — the cache
-        // resyncs on the next real motion event, surfacing a delta the size
-        // of (last-known X server pos − center). That's a one-frame twitch
-        // proportional to how far the cursor was moved while the cam was
-        // disabled. Discarding the first non-zero delta after Activate kills
-        // the spike without affecting steady-state input.
-        if (firstMotionAfterActivate)
+        // Post-activation discard window. XWayland's SetCursorPos updates
+        // its own cursor-position cache immediately, but the X server pointer
+        // doesn't resync until the next real motion event. When the user is
+        // actively moving the cursor at activation time, each motion event
+        // in the first few frames resyncs the cache from the stale X server
+        // position, surfacing big deltas. A single-frame discard catches the
+        // first spike but misses the cascade; a small fixed window absorbs
+        // them all.
+        framesSinceActivate++;
+        if (framesSinceActivate <= ActivateDiscardFrames)
         {
-            if (rawDx != 0 || rawDy != 0)
-                firstMotionAfterActivate = false;
             if (config.AutoTarget)
                 targetSelector.Update(GetCameraHRotation());
             return;
