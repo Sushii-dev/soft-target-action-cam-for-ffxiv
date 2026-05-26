@@ -40,6 +40,8 @@ public sealed class Plugin : IDalamudPlugin
     private readonly RotationDriver rotationDriver;
     private readonly InteractHandler interactHandler;
     private readonly CursorShowHook cursorShowHook;
+    private readonly CursorUpdateHook cursorUpdateHook;
+    private readonly DebugOverlay debugOverlay;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -68,17 +70,34 @@ public sealed class Plugin : IDalamudPlugin
         // re-show the cursor against the user's intent — RMB-held gestures
         // and any open menu / cutscene / popup pass through so legitimate
         // cursor returns still work. See CursorShowHook for full rationale.
-        cursorShowHook = new CursorShowHook(() =>
+        // Same gate is shared by both cursor hooks. Lambda is captured by
+        // reference so it reads the live userWantsActive each tick.
+        Func<bool> shouldSuppress = () =>
             userWantsActive
             && !CameraController.IsRmbHeld()
-            && !IsMenuOpen());
+            && !IsMenuOpen();
+
+        cursorShowHook = new CursorShowHook(shouldSuppress);
+
+        // Hook AtkUnitManager::UpdateCursor — the per-frame routine that
+        // re-asserts Cursor.IsCursorVisible (the byte the SW-cursor render
+        // actually reads). This is the path the Show hook can't reach and
+        // is the root-cause target for the scroll-zoom flicker.
+        cursorUpdateHook = new CursorUpdateHook(shouldSuppress);
+
+        debugOverlay = new DebugOverlay(
+            cursorUpdateHook,
+            () => userWantsActive,
+            () => cameraController.IsActive,
+            IsMenuOpen,
+            CameraController.IsRmbHeld);
 
         ConfigWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(ConfigWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggle action camera mode. Args: on | off | config | cleartarget"
+            HelpMessage = "Toggle action camera mode. Args: on | off | config | cleartarget | debug"
         });
 
         PluginInterface.UiBuilder.Draw += DrawUI;
@@ -98,9 +117,12 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         hardTargetSuppressor.Dispose();
         rotationDriver.Dispose();
-        // Dispose the cursor hook BEFORE the controller so the final Show
-        // call in CameraController.Dispose's RequestShowCursor isn't NOP'd.
+        // Dispose the cursor hooks BEFORE the controller so the final Show
+        // call in CameraController.Dispose's RequestShowCursor isn't NOP'd
+        // and UpdateCursor runs again on the way out (so the cursor flips
+        // back to its natural state once the plugin is gone).
         cursorShowHook.Dispose();
+        cursorUpdateHook.Dispose();
         cameraController.Dispose();
     }
 
@@ -388,6 +410,10 @@ public sealed class Plugin : IDalamudPlugin
             case "cleartarget":
                 ClearHardTarget();
                 break;
+            case "debug":
+                debugOverlay.Enabled = !debugOverlay.Enabled;
+                ChatGui.Print($"[ActionCamera] Cursor debug overlay: {(debugOverlay.Enabled ? "ON" : "OFF")}");
+                break;
             default:
                 userWantsActive = !userWantsActive;
                 ChatGui.Print(userWantsActive ? "[ActionCamera] Activated." : "[ActionCamera] Deactivated.");
@@ -399,6 +425,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         WindowSystem.Draw();
         reticleOverlay.Draw();
+        debugOverlay.Draw();
     }
     private void OpenConfigUi() => ConfigWindow.IsOpen = true;
 }
