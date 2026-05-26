@@ -52,6 +52,15 @@ public class Configuration : IPluginConfiguration
     // Key that clears the current hard target on press. Edge-triggered.
     public VirtualKey ClearHardTargetKey { get; set; } = VirtualKey.NO_KEY;
 
+    // Key that interacts with the targeted object OR advances an open
+    // dialogue / confirms an open prompt. Priority:
+    //   1. If a confirm-style addon is open (Talk, SelectYesno, SelectString,
+    //      etc.) advance it — same as FFXIV's "Confirm" (Numpad 0).
+    //   2. Else if there's a hard target, call InteractWithObject on it.
+    //   3. Else scan the camera cone for the nearest EventNpc/EventObj and
+    //      interact with that.
+    public VirtualKey InteractKey { get; set; } = VirtualKey.NO_KEY;
+
     // Key that hard-targets the cone's current pick. Edge-triggered.
     // Only fires while the action camera is active (otherwise the cone pick is
     // stale — TargetSelector.Update is only called while the camera is active).

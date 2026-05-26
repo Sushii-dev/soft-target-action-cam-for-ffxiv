@@ -21,6 +21,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IGamepadState GamepadState { get; private set; } = null!;
     [PluginService] internal static ICondition Condition { get; private set; } = null!;
     [PluginService] internal static IChatGui ChatGui { get; private set; } = null!;
+    [PluginService] internal static IGameGui GameGui { get; private set; } = null!;
     [PluginService] internal static ISigScanner SigScanner { get; private set; } = null!;
     [PluginService] internal static IGameInteropProvider GameInterop { get; private set; } = null!;
     [PluginService] internal static IPartyList PartyList { get; private set; } = null!;
@@ -37,6 +38,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly ReticleOverlay reticleOverlay;
     private readonly HardTargetSuppressor hardTargetSuppressor;
     private readonly RotationDriver rotationDriver;
+    private readonly InteractHandler interactHandler;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -47,6 +49,7 @@ public sealed class Plugin : IDalamudPlugin
     private bool toggleKeyWasDown;
     private bool clearTargetKeyWasDown;
     private bool hardTargetKeyWasDown;
+    private bool interactKeyWasDown;
     private bool wasExemptedLastTick;
 
     public Plugin()
@@ -58,6 +61,7 @@ public sealed class Plugin : IDalamudPlugin
         reticleOverlay       = new ReticleOverlay(cameraController, Configuration);
         hardTargetSuppressor = new HardTargetSuppressor(Configuration, targetSelector, () => cameraController.IsActive);
         rotationDriver       = new RotationDriver(Configuration, () => cameraController.IsActive, cameraController.GetCameraHRotation);
+        interactHandler      = new InteractHandler(Configuration, cameraController.GetCameraHRotation);
 
         ConfigWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(ConfigWindow);
@@ -115,6 +119,7 @@ public sealed class Plugin : IDalamudPlugin
         HandleToggleKey(menuOpen);
         HandleClearTargetKey(menuOpen);
         HandleHardTargetKey(menuOpen);
+        HandleInteractKey();
         ReconcileCursorSync();
         cameraController.Update();
         // RotationDriver runs after camera so it reads the freshly-updated yaw.
@@ -270,6 +275,23 @@ public sealed class Plugin : IDalamudPlugin
         hardTargetSuppressor.AllowNext();
         try     { TargetManager.Target = pick; }
         finally { hardTargetSuppressor.CancelAllow(); }
+    }
+
+    private void HandleInteractKey()
+    {
+        if (Configuration.InteractKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
+
+        // Deliberately NOT gated on menuOpen — that gate would block dialogue
+        // advance, which is exactly when an addon (== focused/visible UI) is
+        // up. The handler is internally responsible for distinguishing
+        // dialogue-advance from world-interact and only firing in scenarios
+        // where it knows what to do.
+        var isDown = InputBinding.IsDown(Configuration.InteractKey);
+        var rising = isDown && !interactKeyWasDown;
+        interactKeyWasDown = isDown;
+        if (!rising) return;
+
+        interactHandler.TryInteract();
     }
 
     private void HandleClearTargetKey(bool menuOpen)

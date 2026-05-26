@@ -15,6 +15,7 @@ public sealed class ConfigWindow : Window, IDisposable
     private bool listeningForKey;
     private bool listeningForClearKey;
     private bool listeningForHardKey;
+    private bool listeningForInteractKey;
 
     // Shared arming flag: while a picker is listening, we wait for all inputs
     // to be released before capturing the next press. Stops the LMB click
@@ -278,6 +279,14 @@ public sealed class ConfigWindow : Window, IDisposable
         DrawKeyPicker("hardkey", Config.HardTargetKey,
             k => Config.HardTargetKey = k, ref listeningForHardKey);
         ImGui.TextDisabled("  Edge-triggered: hard-targets the cone pick (only while camera is active).");
+
+        ImGui.Spacing();
+        ImGui.Text("Interact key:");
+        ImGui.SameLine();
+        DrawKeyPicker("interactkey", Config.InteractKey,
+            k => Config.InteractKey = k, ref listeningForInteractKey);
+        ImGui.TextDisabled("  Advances open dialogue (Talk / Select* / Yes-No / Ok / Journal / etc.)");
+        ImGui.TextDisabled("  OR interacts with the hard target / nearest EventNpc-EventObj in the cone.");
 
         var clearsOnPress = Config.HardTargetKeyClearsOnPress;
         if (ImGui.Checkbox("  Same key also clears the hard target when one exists", ref clearsOnPress))
