@@ -424,6 +424,22 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawUI()
     {
+        // Render-time re-Hide. Scroll-wheel events (and other input "user is
+        // active" signals) write AtkCursor.IsVisible = true via a path that
+        // neither the Show hook nor UpdateCursor hook catch — the byte
+        // briefly flips true mid-tick between our Framework.Update
+        // re-Hide calls, the renderer reads true, draws the cursor sprite
+        // for one frame. UiBuilder.Draw fires every render frame at the
+        // very moment the game is about to draw its UI layer, so calling
+        // Hide() here closes that window. Uses the existing
+        // RequestHideCursor() path (which calls AtkCursor.Hide() internally
+        // — never writes the field directly, that caused 0.5.16.0's cam
+        // breakage).
+        if (userWantsActive && !CameraController.IsRmbHeld() && !IsMenuOpen())
+        {
+            cameraController.RequestHideCursor();
+        }
+
         WindowSystem.Draw();
         reticleOverlay.Draw();
         debugOverlay.Draw();
