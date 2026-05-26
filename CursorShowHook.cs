@@ -5,43 +5,55 @@ using FFXIVClientStructs.FFXIV.Component.GUI;
 namespace ActionCamera;
 
 /// <summary>
-/// Root-cause fix for cursor flicker while cam mode is active.
+/// Triple-layer cursor-visibility suppression while the user wants the action
+/// cam active.
 ///
-/// The game's UI module re-asserts AtkCursor.IsVisible = true once per tick
-/// whenever it thinks the user is hovering an interactable — which is exactly
-/// what writing to TargetSystem.MouseOverTarget triggers (we do that so
-/// ReAction's Field Target / Soft Target pronoun picks up the cone pick).
-/// Calling AtkCursor.Hide() in our Framework.Update fights that re-assert,
-/// but there's a single-render-frame window where IsVisible = true is live
-/// and the cursor sprite renders. Linux/XWayland compositors mostly drop
-/// these sub-frame flashes; Windows shows every one of them, hence the
-/// platform-divergent flicker reports.
+/// The game has multiple paths that can flip AtkCursor.IsVisible to true:
 ///
-/// Solution: hook AtkCursor.Show() itself and NOP it while the user wants
-/// the cam active and no legitimate consumer (RMB-hold gesture, open menu /
-/// popup / cutscene) needs the cursor. With the hook installed, the game's
-/// re-assert call lands here, gets suppressed, and IsVisible never flips to
-/// true in the first place — so there's nothing to flicker.
+///   1. AtkCursor::Show() — the public method. Called by UI events (popup
+///      open, addon focus, etc.). We hook + NOP it.
 ///
-/// Legitimate paths (menu opens, cutscene starts, plugin deactivates,
-/// RMB releases) all bypass the suppression because the gate checks for
-/// each of them. If the signature scan fails (post-patch, etc.) the per-
-/// tick re-Hide loop in Plugin.ReconcileCursorSync remains as a safety net.
+///   2. AtkCursor::SetVisible(bool) — a lower-level dispatcher. v0.5.14.0
+///      observed flicker on scroll-zoom even with the Show hook installed,
+///      meaning some path writes the field through SetVisible *without*
+///      tail-calling Show. We hook this too and convert true→false when
+///      suppression is active.
+///
+///   3. Direct field write — the game's input pipeline may stomp
+///      AtkCursor.IsVisible = true on input events without going through any
+///      function we can practically hook. As a render-time belt, the plugin
+///      writes IsVisible = false from UiBuilder.Draw (see Plugin.cs) every
+///      render frame. That handler doesn't live here — it's wired in Plugin
+///      so the Draw subscription has the same lifetime as the rest of the
+///      plugin.
+///
+/// Legitimate cursor-return paths (RMB release, menu / cutscene / popup
+/// open, sticky-off deactivation, plugin unload) bypass the suppression
+/// because the gate checks for each of them. If any signature scan fails
+/// after a game patch, the per-tick re-Hide loop in
+/// Plugin.ReconcileCursorSync remains as a final fallback.
 /// </summary>
 internal sealed unsafe class CursorShowHook : IDisposable
 {
     // AtkCursor::Show — function prologue. Tests IsVisible (this+0x1A) and
     // early-outs if already visible; otherwise sets the flag and runs the
-    // cursor-show plumbing. SetVisible(true) tail-calls this, so hooking
-    // here catches every internal "show the cursor" path.
+    // cursor-show plumbing.
     private const string ShowSignature = "48 83 EC 58 80 79 1A 00 75 6C";
 
-    private delegate void AtkCursorShowDelegate(AtkCursor* self);
+    // AtkCursor::SetVisible(bool) — a call-site signature (CALL + JMP +
+    // following instructions). HookFromSignature resolves the relative CALL
+    // target internally, same as our CameraControl hook does.
+    private const string SetVisibleSignature = "E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 8B FA";
 
-    private readonly Hook<AtkCursorShowDelegate>? hook;
+    private delegate void AtkCursorShowDelegate(AtkCursor* self);
+    private delegate void AtkCursorSetVisibleDelegate(AtkCursor* self, bool value);
+
+    private readonly Hook<AtkCursorShowDelegate>? showHook;
+    private readonly Hook<AtkCursorSetVisibleDelegate>? setVisibleHook;
     private readonly Func<bool> shouldSuppress;
 
-    public bool IsInstalled => hook is { IsEnabled: true };
+    public bool IsShowHookInstalled => showHook is { IsEnabled: true };
+    public bool IsSetVisibleHookInstalled => setVisibleHook is { IsEnabled: true };
 
     public CursorShowHook(Func<bool> shouldSuppress)
     {
@@ -49,19 +61,31 @@ internal sealed unsafe class CursorShowHook : IDisposable
 
         try
         {
-            hook = Plugin.GameInterop.HookFromSignature<AtkCursorShowDelegate>(
+            showHook = Plugin.GameInterop.HookFromSignature<AtkCursorShowDelegate>(
                 ShowSignature, ShowDetour);
-            hook.Enable();
+            showHook.Enable();
             Plugin.Log.Debug("[ActionCamera] AtkCursor.Show hook installed.");
         }
         catch (Exception ex)
         {
-            // Sig miss — the per-tick re-Hide loop will still keep the cam
-            // working, just with the original flicker on Windows. Log loudly
-            // so we know to chase the new sig after a patch.
             Plugin.Log.Error(ex,
                 "[ActionCamera] Failed to hook AtkCursor.Show — falling back to " +
-                "per-tick re-Hide. Cursor flicker may return on Windows until the " +
+                "per-tick re-Hide. Cursor flicker may persist until the signature " +
+                "is updated.");
+        }
+
+        try
+        {
+            setVisibleHook = Plugin.GameInterop.HookFromSignature<AtkCursorSetVisibleDelegate>(
+                SetVisibleSignature, SetVisibleDetour);
+            setVisibleHook.Enable();
+            Plugin.Log.Debug("[ActionCamera] AtkCursor.SetVisible hook installed.");
+        }
+        catch (Exception ex)
+        {
+            Plugin.Log.Error(ex,
+                "[ActionCamera] Failed to hook AtkCursor.SetVisible — relying on " +
+                "Show hook + Draw-time stomp. Cursor flicker may persist until the " +
                 "signature is updated.");
         }
     }
@@ -71,8 +95,10 @@ internal sealed unsafe class CursorShowHook : IDisposable
         // Disable BEFORE the caller turns the cursor back on. Disposing the
         // hook removes the suppression so the final Show() call in
         // CameraController.RequestShowCursor() actually shows the cursor.
-        hook?.Disable();
-        hook?.Dispose();
+        showHook?.Disable();
+        showHook?.Dispose();
+        setVisibleHook?.Disable();
+        setVisibleHook?.Dispose();
     }
 
     private void ShowDetour(AtkCursor* self)
@@ -82,6 +108,19 @@ internal sealed unsafe class CursorShowHook : IDisposable
             // Drop the call. IsVisible stays false; no render-side flicker.
             return;
         }
-        hook!.Original(self);
+        showHook!.Original(self);
+    }
+
+    private void SetVisibleDetour(AtkCursor* self, bool value)
+    {
+        // If anything wants visible=true while we're suppressing, force false
+        // so the field write doesn't escape. Hide-direction calls pass through
+        // unmodified — we never want to *prevent* the cursor from going away.
+        if (value && shouldSuppress())
+        {
+            setVisibleHook!.Original(self, false);
+            return;
+        }
+        setVisibleHook!.Original(self, value);
     }
 }
