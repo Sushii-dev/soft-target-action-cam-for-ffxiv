@@ -39,6 +39,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HardTargetSuppressor hardTargetSuppressor;
     private readonly RotationDriver rotationDriver;
     private readonly InteractHandler interactHandler;
+    private readonly CursorShowHook cursorShowHook;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -62,6 +63,15 @@ public sealed class Plugin : IDalamudPlugin
         hardTargetSuppressor = new HardTargetSuppressor(Configuration, targetSelector, () => cameraController.IsActive);
         rotationDriver       = new RotationDriver(Configuration, () => cameraController.IsActive, cameraController.GetCameraHRotation);
         interactHandler      = new InteractHandler(Configuration, cameraController.GetCameraHRotation);
+        // Hook AtkCursor.Show to suppress the game's per-tick re-assert while
+        // cam is active. Predicate: we only block Show calls that would
+        // re-show the cursor against the user's intent — RMB-held gestures
+        // and any open menu / cutscene / popup pass through so legitimate
+        // cursor returns still work. See CursorShowHook for full rationale.
+        cursorShowHook = new CursorShowHook(() =>
+            userWantsActive
+            && !CameraController.IsRmbHeld()
+            && !IsMenuOpen());
 
         ConfigWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(ConfigWindow);
@@ -88,6 +98,9 @@ public sealed class Plugin : IDalamudPlugin
         ConfigWindow.Dispose();
         hardTargetSuppressor.Dispose();
         rotationDriver.Dispose();
+        // Dispose the cursor hook BEFORE the controller so the final Show
+        // call in CameraController.Dispose's RequestShowCursor isn't NOP'd.
+        cursorShowHook.Dispose();
         cameraController.Dispose();
     }
 
