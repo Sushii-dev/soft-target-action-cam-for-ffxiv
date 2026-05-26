@@ -397,29 +397,8 @@ public sealed class Plugin : IDalamudPlugin
 
     private void DrawUI()
     {
-        // Render-time cursor suppression. UiBuilder.Draw fires every render
-        // frame, just before the game renders its own UI layer (the cursor
-        // sprite included). Stomping AtkCursor.IsVisible = false here closes
-        // the timing window that the per-tick re-Hide loop can't reach: if
-        // the game's input pipeline writes IsVisible = true mid-tick (e.g.
-        // mouse-wheel scroll → cursor reveal), the value lives until either
-        // our SetVisible hook catches it or this stomp lands. With both
-        // installed, the sprite never gets a frame where IsVisible = true is
-        // visible to the renderer while cam mode is active.
-        StompCursorWhileActive();
-
         WindowSystem.Draw();
         reticleOverlay.Draw();
-    }
-
-    private unsafe void StompCursorWhileActive()
-    {
-        if (!(userWantsActive && !CameraController.IsRmbHeld() && !IsMenuOpen()))
-            return;
-
-        var stage = FFXIVClientStructs.FFXIV.Component.GUI.AtkStage.Instance();
-        if (stage == null) return;
-        stage->AtkCursor.IsVisible = false;
     }
     private void OpenConfigUi() => ConfigWindow.IsOpen = true;
 }
