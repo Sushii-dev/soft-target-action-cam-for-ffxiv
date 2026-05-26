@@ -70,9 +70,11 @@ internal sealed unsafe class InteractHandler
 
     private static AtkUnitBase* GetVisibleAddon(string name)
     {
-        var addr = Plugin.GameGui.GetAddonByName(name, 1);
-        if (addr == IntPtr.Zero) return null;
-        var addon = (AtkUnitBase*)addr;
+        // Dalamud API 15: GetAddonByName returns AtkUnitBasePtr (a wrapper
+        // struct), not IntPtr. .Address is the underlying pointer.
+        var wrapper = Plugin.GameGui.GetAddonByName(name, 1);
+        if (wrapper.Address == IntPtr.Zero) return null;
+        var addon = (AtkUnitBase*)wrapper.Address;
         return addon->IsVisible ? addon : null;
     }
 
@@ -88,7 +90,7 @@ internal sealed unsafe class InteractHandler
         if (addon == null) return false;
 
         var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int;
+        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
         values[0].Int = 0;
         addon->FireCallback(1, values, true);
         return true;
@@ -103,7 +105,7 @@ internal sealed unsafe class InteractHandler
         // that destructive prompts default through. No typed-button click
         // path because FFXIVClientStructs doesn't expose ClickAddonButton.
         var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int;
+        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
         values[0].Int = 0;
         addr->FireCallback(1, values, true);
         return true;
@@ -117,7 +119,7 @@ internal sealed unsafe class InteractHandler
         // standard advance pattern is the same FireCallback shape as list
         // selections — index 0 = OK button.
         var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int;
+        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
         values[0].Int = 0;
         addr->FireCallback(1, values, true);
         return true;
@@ -130,7 +132,7 @@ internal sealed unsafe class InteractHandler
         // Accept = button index 44 in YesAlready's reference, but the simpler
         // FireCallback-with-1 path also works for accepting quest offers.
         var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int;
+        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
         values[0].Int = 0;
         addr->FireCallback(1, values, true);
         return true;
@@ -141,7 +143,7 @@ internal sealed unsafe class InteractHandler
         var addr = GetVisibleAddon("JournalResult");
         if (addr == null) return false;
         var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int;
+        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
         values[0].Int = 0;
         addr->FireCallback(1, values, true);
         return true;
@@ -152,7 +154,7 @@ internal sealed unsafe class InteractHandler
         var addr = GetVisibleAddon("MaterializeDialog");
         if (addr == null) return false;
         var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.ValueType.Int;
+        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
         values[0].Int = 0;
         addr->FireCallback(1, values, true);
         return true;
