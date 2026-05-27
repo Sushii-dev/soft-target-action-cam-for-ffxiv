@@ -322,7 +322,9 @@ public sealed class ConfigWindow : Window, IDisposable
         "Ground ring",
         "Dot above head",
         "Chevron above head",
-        "Screen brackets",
+        "Screen brackets (small)",
+        "Screen brackets (large)",
+        "Screen brackets (tight)",
     };
 
     private void DrawInteractFeedbackSection()
