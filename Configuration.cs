@@ -8,6 +8,9 @@ namespace ActionCamera;
 [Serializable]
 public class Configuration : IPluginConfiguration
 {
+    // Bumped on breaking changes that need migration. See <c>MigrateIfNeeded</c>.
+    //   v1 → v2: shipped looping sound id 21 as success-sound default. Migration
+    //            resets users whose saved id is still the looping value.
     public int Version { get; set; } = 1;
 
     // --- Activation ---
@@ -154,6 +157,25 @@ public class Configuration : IPluginConfiguration
     // than a plugin overlay.
     public Vector4 InteractIndicatorColor { get; set; } = new Vector4(1f, 0.85f, 0.3f, 0.65f);
 
+    // --- Interact target geometry (v0.5.22.0) ---
+    //
+    // Separate cone + range knobs from the combat auto-target system. Combat
+    // wants a tight forward cone matching the player's swing arc; interact
+    // wants a wider sweep at varying distance — e.g. seeing the aetheryte 25y
+    // ahead while a quest NPC is 4y to the side. Sharing the combat values
+    // meant tuning one regressed the other.
+
+    // Half-angle in degrees of the forward cone used to pick interact / examine
+    // candidates. Wider by default than combat so peripheral NPCs still resolve.
+    public float InteractFovDegrees { get; set; } = 45f;
+
+    // Maximum distance (yalms) to consider interact / examine candidates. The
+    // game's own InteractWithObject silently rejects out-of-range targets so
+    // this only affects what the cone returns; setting it higher than the
+    // game-side limit just lets the indicator point at things you'll need to
+    // walk closer to engage.
+    public float InteractMaxDistance { get; set; } = 10f;
+
     // --- Interact audio (v0.5.21.0) ---
     //
     // Played on interact-key press. Success sound fires only on the first
@@ -163,8 +185,11 @@ public class Configuration : IPluginConfiguration
     // nothing was in range / no dialog was advanceable.
 
     public bool PlayInteractSuccessSound { get; set; } = true;
-    // Default 21: short soft chime (close-menu tone). Easy on the ears.
-    public uint InteractSuccessSoundId { get; set; } = 21;
+    // Default 23: Dalamud's own "window opened" chime — soft and confirmed
+    // one-shot (countless plugins use it, no looping reports). v0.5.21.0
+    // originally shipped 21 here, which loops on at least some setups; the
+    // Version=1→2 migration resets users still on that value.
+    public uint InteractSuccessSoundId { get; set; } = 23;
 
     public bool PlayInteractFailSound { get; set; } = true;
     // Default 12: neutral tick, not a buzzer. Subtle "nothing happened" cue.
@@ -185,4 +210,28 @@ public class Configuration : IPluginConfiguration
     public float MaxVRotationOverride { get; set; } = 0.65f;    //  ~37°
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
+
+    /// <summary>
+    /// Run after loading from disk to repair fields that shipped with broken
+    /// defaults in earlier versions. Idempotent — bumps <see cref="Version"/>
+    /// to the highest known version and stops.
+    /// </summary>
+    public void MigrateIfNeeded()
+    {
+        var dirty = false;
+
+        if (Version < 2)
+        {
+            // v0.5.21.0 default was 21, which loops indefinitely once played
+            // (no off path through the audio mixer). Anyone whose stored value
+            // is still 21 was running on the unsafe default — bump them to
+            // the new safe default. Customised values pass through unchanged.
+            if (InteractSuccessSoundId == 21)
+                InteractSuccessSoundId = 23;
+            Version = 2;
+            dirty = true;
+        }
+
+        if (dirty) Save();
+    }
 }

@@ -86,19 +86,61 @@ internal sealed unsafe class InteractHandler
         // topmost interactive layer.
         if (TryAdvanceDialogue()) return InteractResult.AdvancedDialogue;
 
-        if (TryInteractWithTarget()) return InteractResult.InteractedWithTarget;
+        // Hard-target interact branch with PC awareness. We do this BEFORE the
+        // general TryInteractWithTarget cone-scan path so that:
+        //   • a hard-targeted PC routes to Examine (when enabled + sheathed),
+        //     instead of falling into ts->InteractWithObject which is a no-op
+        //     on player kinds and would silently consume the keypress.
+        //   • a hard-targeted NPC / EventObj / Aetheryte still gets the normal
+        //     InteractWithObject path below.
+        var ts = TargetSystem.Instance();
+        if (ts != null)
+        {
+            var hardTarget = ts->GetHardTarget();
+            if (hardTarget != null)
+            {
+                var dalamudObj = Plugin.ObjectTable.CreateObjectReference((nint)hardTarget);
+                if (dalamudObj is { ObjectKind: DalamudObjectKind.Pc }
+                    && config.InteractExaminePlayers
+                    && !IsLocalPlayerWeaponDrawn())
+                {
+                    // Second press on a PC — examine. (First press set them
+                    // as the hard target via the PC fallback below.)
+                    AgentInspect.Instance()->ExamineCharacter(dalamudObj.EntityId);
+                    return InteractResult.ExaminedPlayer;
+                }
 
-        // PC examine fallback — only when explicitly enabled AND the local
-        // player has their weapon sheathed. The weapon-drawn gate is checked
-        // both here (against the *local* player) and inside the cone scan
-        // candidate filter (against the target — players in the world).
+                // Non-PC hard target — call InteractWithObject as normal.
+                if (dalamudObj == null || dalamudObj.ObjectKind != DalamudObjectKind.Pc)
+                {
+                    ts->InteractWithObject(hardTarget);
+                    return InteractResult.InteractedWithTarget;
+                }
+
+                // PC hard-targeted but examine is disabled / weapon drawn —
+                // fall through to the cone scan paths. The keypress shouldn't
+                // be silently lost.
+            }
+        }
+
+        // No usable hard target — cone scan for NPC / EventObj / Aetheryte.
+        if (TryInteractWithConeNpc()) return InteractResult.InteractedWithTarget;
+
+        // Last resort: PC cone scan. First press on a PC sets them as the
+        // hard target so the next press can route into the Examine branch
+        // above (matches the "click to target, click again to examine"
+        // muscle memory from the vanilla game).
         if (config.InteractExaminePlayers && !IsLocalPlayerWeaponDrawn())
         {
             var pc = FindCandidateInCone(IsExaminablePlayer);
             if (pc != null)
             {
-                AgentInspect.Instance()->ExamineCharacter(pc.EntityId);
-                return InteractResult.ExaminedPlayer;
+                // HardTargetSuppressor only blocks LMB-recency or combat
+                // soft-target promotions — neither applies here, so the
+                // straight assignment passes through cleanly. ITargetManager.Target
+                // routes through SetHardTarget under the hood.
+                Plugin.TargetManager.Target = pc;
+                return InteractResult.InteractedWithTarget;
             }
         }
 
@@ -229,23 +271,21 @@ internal sealed unsafe class InteractHandler
 
     // ── Interact with target ────────────────────────────────────────────────
 
-    private bool TryInteractWithTarget()
+    /// <summary>
+    /// Cone-only branch: pick the nearest world-interactable (EventNpc /
+    /// EventObj / Aetheryte) and call <c>InteractWithObject</c>. Hard-target
+    /// handling lives in <see cref="TryInteract"/> directly because it needs
+    /// to special-case player-kind targets for the two-step Examine flow.
+    /// </summary>
+    private bool TryInteractWithConeNpc()
     {
         var ts = TargetSystem.Instance();
         if (ts == null) return false;
 
-        // Prefer the existing hard target — the player picked it on purpose.
-        var target = ts->GetHardTarget();
-        if (target == null)
-        {
-            // No hard target — find the nearest world-interactable in cone.
-            var npc = FindCandidateInCone(IsWorldInteractable);
-            if (npc == null) return false;
-            target = (GameObject*)npc.Address;
-        }
-        if (target == null) return false;
+        var npc = FindCandidateInCone(IsWorldInteractable);
+        if (npc == null) return false;
 
-        ts->InteractWithObject(target);
+        ts->InteractWithObject((GameObject*)npc.Address);
         return true;
     }
 
@@ -263,12 +303,12 @@ internal sealed unsafe class InteractHandler
         var camYaw    = getCameraYaw();
         var camForward = new Vector3(-MathF.Sin(camYaw), 0f, -MathF.Cos(camYaw));
 
-        var maxAngle  = config.AutoTargetFovDegrees * (MathF.PI / 180f);
-        // Cap at game's typical interact / examine range — InteractWithObject
-        // already handles "too far" gracefully, but a tight cap avoids picking
-        // the wrong target when several are visible.
-        const float interactRange = 10f;
-        var maxDistSq = interactRange * interactRange;
+        // Interact uses its own FOV + range, separate from the combat auto-
+        // target system. Combat wants a tight forward cone matching the
+        // player's swing arc; interact wants a wider sweep so peripheral
+        // NPCs / aetherytes still resolve. See Configuration.InteractFovDegrees.
+        var maxAngle  = config.InteractFovDegrees * (MathF.PI / 180f);
+        var maxDistSq = config.InteractMaxDistance * config.InteractMaxDistance;
 
         IGameObject? best = null;
         var bestScore = float.MaxValue;

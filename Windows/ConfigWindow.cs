@@ -327,6 +327,33 @@ public sealed class ConfigWindow : Window, IDisposable
 
     private void DrawInteractFeedbackSection()
     {
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Interact Targeting");
+        ImGui.TextDisabled("  Separate cone + range for the interact key, distinct from");
+        ImGui.TextDisabled("  the combat auto-target settings above.");
+        ImGui.Spacing();
+
+        var ifov = Config.InteractFovDegrees;
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Interact FOV cone (°)", ref ifov, 5f, 90f, "%.0f°"))
+        {
+            Config.InteractFovDegrees = ifov;
+            Config.Save();
+        }
+
+        var idist = Config.InteractMaxDistance;
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Interact max distance (y)", ref idist, 2f, 30f, "%.0fy"))
+        {
+            Config.InteractMaxDistance = idist;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  The game's own InteractWithObject silently rejects out-of-range");
+        ImGui.TextDisabled("  targets — raising this just lets the indicator look further ahead.");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
         ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Interact Feedback");
         ImGui.TextDisabled("  Visual + audio cues for the interact key.");
         ImGui.Spacing();
