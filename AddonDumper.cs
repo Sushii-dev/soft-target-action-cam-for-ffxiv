@@ -1,3 +1,4 @@
+using System;
 using System.Text;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 
@@ -111,10 +112,10 @@ internal static unsafe class AddonDumper
         {
             var ptr = textNode->NodeText.StringPtr.Value;
             if (ptr == null) return string.Empty;
-            var span = new System.ReadOnlySpan<byte>(ptr, 64);
+            var span = new ReadOnlySpan<byte>(ptr, 64);
             var nul = span.IndexOf((byte)0);
             if (nul < 0) nul = span.Length;
-            return System.Text.Encoding.UTF8.GetString(ptr, nul);
+            return Encoding.UTF8.GetString(ptr, nul);
         }
         catch
         {
