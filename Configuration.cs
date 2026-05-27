@@ -136,6 +136,49 @@ public class Configuration : IPluginConfiguration
     public bool ShowReticle { get; set; } = true;
     public Vector4 ReticleColor { get; set; } = new Vector4(1f, 1f, 1f, 0.8f);
 
+    // --- Interact indicator (v0.5.21.0) ---
+    //
+    // Subtle on-screen marker over the candidate interact target — answers
+    // "what would the interact key target right now?" at a glance. Only
+    // drawn while the weapon is sheathed AND the player is not in combat
+    // AND not bound by a duty — combat / dungeon / trial UI is already
+    // dense and the indicator would be more noise than signal there.
+
+    public bool ShowInteractIndicator { get; set; } = true;
+
+    // Indicator visual style — see InteractIndicator for definitions.
+    public InteractIndicatorStyle InteractIndicatorStyle { get; set; } = InteractIndicatorStyle.GroundRing;
+
+    // Default chosen to match FFXIV's own "interactable" tint (soft warm gold
+    // at ~65% alpha) so the indicator reads as a native affordance rather
+    // than a plugin overlay.
+    public Vector4 InteractIndicatorColor { get; set; } = new Vector4(1f, 0.85f, 0.3f, 0.65f);
+
+    // --- Interact audio (v0.5.21.0) ---
+    //
+    // Played on interact-key press. Success sound fires only on the first
+    // interaction with a target (NPC interact, player examine) — subsequent
+    // dialogue advances stay silent because the game already plays click
+    // sounds for them. Failure sound fires when the key was pressed but
+    // nothing was in range / no dialog was advanceable.
+
+    public bool PlayInteractSuccessSound { get; set; } = true;
+    // Default 21: short soft chime (close-menu tone). Easy on the ears.
+    public uint InteractSuccessSoundId { get; set; } = 21;
+
+    public bool PlayInteractFailSound { get; set; } = true;
+    // Default 12: neutral tick, not a buzzer. Subtle "nothing happened" cue.
+    public uint InteractFailSoundId { get; set; } = 12;
+
+    // --- Player examine on interact (v0.5.21.0) ---
+    //
+    // When enabled, the interact key opens the FFXIV Examine window for the
+    // nearest player character in the cone — as a fallback after the
+    // NPC / EventObj / Aetheryte scan. Always blocked while the weapon is
+    // drawn (matches sheathe-only design — you shouldn't be examining
+    // strangers mid-fight).
+    public bool InteractExaminePlayers { get; set; } = true;
+
     // --- Vertical camera limits ---
     // These mirror the game's own limits and can be tightened by the user.
     public float MinVRotationOverride { get; set; } = -1.45f;   // ~-83°

@@ -1,45 +1,67 @@
 using System;
 using System.Numerics;
+using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.UI;
+using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
-using ObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
+using DalamudObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
 
 namespace ActionCamera;
 
 /// <summary>
-/// Single-key "interact" handler covering three paths:
+/// Outcome of a single interact-key press. Used by <see cref="Plugin"/> to
+/// decide whether to play an audio cue (and which one) and by future
+/// telemetry. Order matches the priority chain in <see cref="InteractHandler.TryInteract"/>.
+/// </summary>
+internal enum InteractResult
+{
+    /// <summary>An open dialog / prompt was advanced. The game plays its own
+    /// click sound for these, so the plugin stays silent on this branch.</summary>
+    AdvancedDialogue,
+
+    /// <summary>An NPC, event object, or aetheryte was interacted with —
+    /// either the current hard target or a cone-scan pick. Plays success sfx
+    /// (first interaction with a fresh target gets no game-side audio
+    /// feedback otherwise).</summary>
+    InteractedWithTarget,
+
+    /// <summary>A player character was examined via AgentInspect. Plays
+    /// success sfx — the Examine window has its own open sound but starts
+    /// silently for ~half a second while data loads.</summary>
+    ExaminedPlayer,
+
+    /// <summary>Key pressed, nothing was advanceable / interactable in range.
+    /// Plays fail sfx.</summary>
+    NothingFound,
+}
+
+/// <summary>
+/// Single-key "interact" handler covering four paths in priority order:
 ///
-///   1. Dialogue advance — Talk / SelectString / SelectYesno / etc. — same
-///      as the user pressing the game's "Confirm" (Numpad 0). Highest
-///      priority, so the key always advances an open prompt before doing
-///      anything else.
-///   2. Hard-target interact — if the player already has a hard target,
-///      call TargetSystem.InteractWithObject on it.
-///   3. Cone scan — when there's no hard target, scan the camera cone for
-///      the nearest EventNpc / EventObj / Aetheryte and interact with that.
-///      Mirrors how the user would naturally aim at an NPC in cam mode and
-///      expect a single keypress to open the dialogue.
+///   1. Dialogue advance — Talk / SelectString / SelectYesno / etc.
+///   2. Hard-target interact — the player already has a hard target.
+///   3. Cone scan for EventNpc / EventObj / Aetheryte (the "world interact"
+///      kinds — quest givers, vendors, aetherytes, clickable scenery).
+///   4. (v0.5.21.0) Cone scan for nearby player characters → open the
+///      FFXIV Examine window via <c>AgentInspect::ExamineCharacter</c>.
+///      Gated on <see cref="Configuration.InteractExaminePlayers"/> AND the
+///      local player having no weapon drawn (sheathed-only feature —
+///      examining strangers mid-fight makes no sense).
 ///
-/// Detection / advance patterns adapted from ECommons' AddonMaster files
-/// (the current canonical reference; YesAlready dropped ClickLib for these
-/// in 2024). FireCallback for list selections, simulated mouse click via
-/// <see cref="AddonClick.Click"/> for typed-button dialogs (Yesno/Ok/
-/// JournalAccept/JournalResult/MaterializeDialog), raw MouseDown/Click/Up
-/// event triplet for Talk.
+/// Detection / advance patterns adapted from ECommons' AddonMaster files.
+/// FireCallback for list selections, simulated mouse click via
+/// <see cref="AddonClick.Click"/> for typed-button dialogs, raw
+/// MouseDown/Click/Up event triplet for Talk.
 ///
 /// History note (0.5.13.0 → 0.5.20.0): the typed-button paths were originally
 /// implemented with the same <c>FireCallback(1, [int 0])</c> shape as list
-/// selections. That call goes to the addon's main callback handler — for
-/// list addons it maps cleanly to "selected index 0", but for typed-button
-/// dialogs it hits the dialog's dismiss path, not the typed Accept/Yes/OK
-/// handler. Symptom was "pressing R closes the quest prompt without
-/// accepting". 0.5.20.0 switches them to <see cref="AddonClick.Click"/>,
-/// which replays the button's bound AtkEvent through the addon's
-/// ReceiveEvent — the same path the game runs on a real mouse click, so
-/// the typed handler actually fires.
+/// selections. That fires the addon's dismiss path on typed-button dialogs,
+/// not the typed Accept button — so quest accepts closed without accepting.
+/// 0.5.20.0 switched them to <see cref="AddonClick.Click"/> which replays
+/// the button's bound AtkEvent through the addon's ReceiveEvent.
 /// </summary>
 internal sealed unsafe class InteractHandler
 {
@@ -53,39 +75,72 @@ internal sealed unsafe class InteractHandler
     }
 
     /// <summary>
-    /// Try paths in order. Returns true once any path fires (so the caller
-    /// can stop looking).
+    /// Run the priority chain once. Returns which branch fired (if any). The
+    /// caller is responsible for translating the result into audio feedback
+    /// — see <see cref="Plugin.HandleInteractKey"/>.
     /// </summary>
-    public bool TryInteract()
+    public InteractResult TryInteract()
     {
         // Dialogue advance always wins. Order within matters — yes/no/ok and
         // list selections render on top of Talk and we want to act on the
         // topmost interactive layer.
-        if (TryAdvanceDialogue()) return true;
+        if (TryAdvanceDialogue()) return InteractResult.AdvancedDialogue;
 
-        return TryInteractWithTarget();
+        if (TryInteractWithTarget()) return InteractResult.InteractedWithTarget;
+
+        // PC examine fallback — only when explicitly enabled AND the local
+        // player has their weapon sheathed. The weapon-drawn gate is checked
+        // both here (against the *local* player) and inside the cone scan
+        // candidate filter (against the target — players in the world).
+        if (config.InteractExaminePlayers && !IsLocalPlayerWeaponDrawn())
+        {
+            var pc = FindCandidateInCone(IsExaminablePlayer);
+            if (pc != null)
+            {
+                AgentInspect.Instance()->ExamineCharacter(pc.EntityId);
+                return InteractResult.ExaminedPlayer;
+            }
+        }
+
+        return InteractResult.NothingFound;
+    }
+
+    /// <summary>
+    /// Snapshot of "what the interact key would target right now". Used by
+    /// the indicator overlay to draw a marker over the candidate. Returns
+    /// null if nothing in cone or the player is currently in a state where
+    /// the indicator wouldn't be useful (the indicator's own draw gates
+    /// catch the gross cases; this method only returns the geometry pick).
+    /// </summary>
+    public IGameObject? GetIndicatorCandidate()
+    {
+        var npc = FindCandidateInCone(IsWorldInteractable);
+        if (npc != null) return npc;
+
+        if (config.InteractExaminePlayers && !IsLocalPlayerWeaponDrawn())
+            return FindCandidateInCone(IsExaminablePlayer);
+
+        return null;
     }
 
     // ── Dialogue advance ────────────────────────────────────────────────────
 
     private static bool TryAdvanceDialogue()
     {
-        if (TryClickYesno())          return true;
-        if (TrySelectFirst("SelectString"))     return true;
-        if (TrySelectFirst("SelectIconString")) return true;
+        if (TryClickYesno())             return true;
+        if (TrySelectFirst("SelectString"))         return true;
+        if (TrySelectFirst("SelectIconString"))     return true;
         if (TrySelectFirst("CutSceneSelectString")) return true;
-        if (TryClickOk())             return true;
-        if (TryClickJournalAccept())  return true;
-        if (TryClickJournalResult())  return true;
+        if (TryClickOk())                return true;
+        if (TryClickJournalAccept())     return true;
+        if (TryClickJournalResult())     return true;
         if (TryClickMaterializeDialog()) return true;
-        if (TryAdvanceTalk())         return true;
+        if (TryAdvanceTalk())            return true;
         return false;
     }
 
     private static AtkUnitBase* GetVisibleAddon(string name)
     {
-        // Dalamud API 15: GetAddonByName returns AtkUnitBasePtr (a wrapper
-        // struct), not IntPtr. .Address is the underlying pointer.
         var wrapper = Plugin.GameGui.GetAddonByName(name, 1);
         if (wrapper.Address == IntPtr.Zero) return null;
         var addon = (AtkUnitBase*)wrapper.Address;
@@ -94,9 +149,8 @@ internal sealed unsafe class InteractHandler
 
     /// <summary>
     /// List-selection addons (SelectString / SelectIconString /
-    /// CutSceneSelectString) all advance via FireCallback(1, [int index],
-    /// updateState=true). Selecting index 0 = first option = the equivalent
-    /// of the user pressing Confirm on the default-highlighted entry.
+    /// CutSceneSelectString) advance via FireCallback(1, [int index], true).
+    /// Index 0 = first option = equivalent of the user pressing Confirm.
     /// </summary>
     private static bool TrySelectFirst(string addonName)
     {
@@ -104,7 +158,7 @@ internal sealed unsafe class InteractHandler
         if (addon == null) return false;
 
         var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
+        values[0].Type = AtkValueType.Int;
         values[0].Int = 0;
         addon->FireCallback(1, values, true);
         return true;
@@ -114,10 +168,6 @@ internal sealed unsafe class InteractHandler
     {
         var addr = GetVisibleAddon("SelectYesno");
         if (addr == null) return false;
-        // We always pick Yes. Caller / docs are responsible for warning the
-        // user that destructive prompts default through. RespectDisabledButtons-
-        // equivalent behaviour is built into AddonClick.Click (refuses to
-        // fire when the button's Enabled flag is off).
         var typed = (AddonSelectYesno*)addr;
         return AddonClick.Click(typed->YesButton, (AtkUnitBase*)typed);
     }
@@ -134,10 +184,7 @@ internal sealed unsafe class InteractHandler
     {
         var addr = GetVisibleAddon("JournalAccept");
         if (addr == null) return false;
-        // No typed CS struct as of FFXIVClientStructs main. ECommons resolves
-        // the Accept button via the addon's component-by-id lookup at id 44
-        // (decline is 45). The id is from ECommons' AddonMaster.JournalAccept
-        // and matches YesAlready / Henchman reference plugins.
+        // No typed CS struct. ECommons resolves Accept via component id 44.
         var btn = addr->GetComponentButtonById(44);
         return AddonClick.Click(btn, addr);
     }
@@ -159,10 +206,9 @@ internal sealed unsafe class InteractHandler
     }
 
     /// <summary>
-    /// Talk (NPC speech bubble) advances on a click of the whole panel rather
-    /// than a button. Synthesise a mouse-down/click/up triplet with state
-    /// flag 132 — the magic value YesAlready and ClickLib both use; not
-    /// formally documented but empirically correct.
+    /// Talk (NPC speech bubble) advances on a click of the whole panel, not
+    /// a button. Synthesise a MouseDown/Click/Up triplet with state flag 132
+    /// — the magic value YesAlready and ClickLib both use; empirically correct.
     /// </summary>
     private static bool TryAdvanceTalk()
     {
@@ -192,8 +238,8 @@ internal sealed unsafe class InteractHandler
         var target = ts->GetHardTarget();
         if (target == null)
         {
-            // No hard target — find the nearest interactable in the cone.
-            var npc = FindInteractableInCone();
+            // No hard target — find the nearest world-interactable in cone.
+            var npc = FindCandidateInCone(IsWorldInteractable);
             if (npc == null) return false;
             target = (GameObject*)npc.Address;
         }
@@ -204,12 +250,11 @@ internal sealed unsafe class InteractHandler
     }
 
     /// <summary>
-    /// Cone scan for the nearest interactable game object — EventNpc (quest
-    /// givers, vendors), EventObj (clickable scenery, aetherytes, levequest
-    /// posts), and BattleNpc isn't included here because those aren't
-    /// interact-targets (combat hooks them in different ways).
+    /// Generic cone scan. Caller supplies the eligibility predicate (world
+    /// interactable vs examinable player) — everything else (distance, angle,
+    /// scoring) is shared.
     /// </summary>
-    private IGameObject? FindInteractableInCone()
+    private IGameObject? FindCandidateInCone(Func<IGameObject, bool> eligible)
     {
         var localPlayer = Plugin.ObjectTable.LocalPlayer;
         if (localPlayer == null) return null;
@@ -219,9 +264,9 @@ internal sealed unsafe class InteractHandler
         var camForward = new Vector3(-MathF.Sin(camYaw), 0f, -MathF.Cos(camYaw));
 
         var maxAngle  = config.AutoTargetFovDegrees * (MathF.PI / 180f);
-        // Cap at game's typical interact range — InteractWithObject already
-        // handles "too far" gracefully, but a tight cap avoids picking the
-        // wrong NPC when several are visible.
+        // Cap at game's typical interact / examine range — InteractWithObject
+        // already handles "too far" gracefully, but a tight cap avoids picking
+        // the wrong target when several are visible.
         const float interactRange = 10f;
         var maxDistSq = interactRange * interactRange;
 
@@ -231,8 +276,7 @@ internal sealed unsafe class InteractHandler
         foreach (var obj in Plugin.ObjectTable)
         {
             if (obj.GameObjectId == localPlayer.GameObjectId) continue;
-            if (!IsInteractKind(obj.ObjectKind)) continue;
-            if (!obj.IsTargetable) continue;
+            if (!eligible(obj)) continue;
 
             var toTarget = obj.Position - playerPos;
             var distSq = toTarget.LengthSquared();
@@ -247,7 +291,7 @@ internal sealed unsafe class InteractHandler
             if (angle > maxAngle) continue;
 
             // Same scoring shape as the combat cone — angle weighted heavier
-            // than distance so the most-centred interactable wins.
+            // than distance so the most-centred candidate wins.
             var score = angle * 2.0f + MathF.Sqrt(distSq) * 0.05f;
             if (score < bestScore)
             {
@@ -259,8 +303,26 @@ internal sealed unsafe class InteractHandler
         return best;
     }
 
-    private static bool IsInteractKind(ObjectKind kind)
-        => kind == ObjectKind.EventNpc
-        || kind == ObjectKind.EventObj
-        || kind == ObjectKind.Aetheryte;
+    // ── Eligibility predicates ──────────────────────────────────────────────
+
+    private static bool IsWorldInteractable(IGameObject obj)
+    {
+        if (!obj.IsTargetable) return false;
+        var k = obj.ObjectKind;
+        return k == DalamudObjectKind.EventNpc
+            || k == DalamudObjectKind.EventObj
+            || k == DalamudObjectKind.Aetheryte;
+    }
+
+    private static bool IsExaminablePlayer(IGameObject obj)
+    {
+        if (!obj.IsTargetable) return false;
+        return obj.ObjectKind == DalamudObjectKind.Pc;
+    }
+
+    private static bool IsLocalPlayerWeaponDrawn()
+    {
+        var lp = Plugin.ObjectTable.LocalPlayer;
+        return lp != null && lp.StatusFlags.HasFlag(StatusFlags.WeaponOut);
+    }
 }

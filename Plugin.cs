@@ -40,6 +40,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly HardTargetSuppressor hardTargetSuppressor;
     private readonly RotationDriver rotationDriver;
     private readonly InteractHandler interactHandler;
+    private readonly InteractIndicator interactIndicator;
     private readonly CursorShowHook cursorShowHook;
     private readonly CursorUpdateHook cursorUpdateHook;
     private readonly DebugOverlay debugOverlay;
@@ -66,6 +67,9 @@ public sealed class Plugin : IDalamudPlugin
         hardTargetSuppressor = new HardTargetSuppressor(Configuration, targetSelector, () => cameraController.IsActive);
         rotationDriver       = new RotationDriver(Configuration, () => cameraController.IsActive, cameraController.GetCameraHRotation);
         interactHandler      = new InteractHandler(Configuration, cameraController.GetCameraHRotation);
+        // Indicator shares the handler's cone scan so what gets drawn matches
+        // what the interact key will fire against. No double scanning.
+        interactIndicator    = new InteractIndicator(Configuration, interactHandler.GetIndicatorCandidate);
         // Hook AtkCursor.Show to suppress the game's per-tick re-assert while
         // cam is active. Predicate: we only block Show calls that would
         // re-show the cursor against the user's intent — RMB-held gestures
@@ -327,7 +331,24 @@ public sealed class Plugin : IDalamudPlugin
         interactKeyWasDown = isDown;
         if (!rising) return;
 
-        interactHandler.TryInteract();
+        // Audio feedback differs by outcome:
+        //  - AdvancedDialogue: silent (game plays its own click sounds).
+        //  - Interacted / Examined: success chime — the moment a fresh
+        //    target is engaged is otherwise audio-feedback-less.
+        //  - NothingFound: subtle fail tick so the player knows the key
+        //    registered but didn't find anything.
+        var result = interactHandler.TryInteract();
+        switch (result)
+        {
+            case InteractResult.InteractedWithTarget:
+            case InteractResult.ExaminedPlayer:
+                Sfx.PlaySuccess(Configuration);
+                break;
+            case InteractResult.NothingFound:
+                Sfx.PlayFail(Configuration);
+                break;
+            // AdvancedDialogue intentionally falls through silent.
+        }
     }
 
     private void HandleClearTargetKey(bool menuOpen)
@@ -448,6 +469,7 @@ public sealed class Plugin : IDalamudPlugin
 
         WindowSystem.Draw();
         reticleOverlay.Draw();
+        interactIndicator.Draw();
         debugOverlay.Draw();
     }
     private void OpenConfigUi() => ConfigWindow.IsOpen = true;

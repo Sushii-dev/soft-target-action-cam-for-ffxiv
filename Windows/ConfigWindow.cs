@@ -50,6 +50,8 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         DrawTargetingSection();
         ImGui.Separator();
+        DrawInteractFeedbackSection();
+        ImGui.Separator();
         DrawReticleSection();
         ImGui.Separator();
         DrawCameraLimitsSection();
@@ -311,6 +313,127 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled("  Edge-triggered: clears the current hard target on key down.");
 
         ImGui.EndDisabled();
+    }
+
+    // ── Interact feedback (indicator + audio + player examine) ──────────────
+
+    private static readonly string[] IndicatorStyleLabels =
+    {
+        "Ground ring",
+        "Dot above head",
+        "Chevron above head",
+        "Screen brackets",
+    };
+
+    private void DrawInteractFeedbackSection()
+    {
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Interact Feedback");
+        ImGui.TextDisabled("  Visual + audio cues for the interact key.");
+        ImGui.Spacing();
+
+        // ── Indicator ───────────────────────────────────────────────────────
+        var showInd = Config.ShowInteractIndicator;
+        if (ImGui.Checkbox("Show indicator over the candidate interact target", ref showInd))
+        {
+            Config.ShowInteractIndicator = showInd;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Only shown when sheathed, out of combat, and not in a duty.");
+
+        ImGui.BeginDisabled(!Config.ShowInteractIndicator);
+
+        var styleIdx = (int)Config.InteractIndicatorStyle;
+        ImGui.SetNextItemWidth(220);
+        if (ImGui.Combo("Style", ref styleIdx, IndicatorStyleLabels, IndicatorStyleLabels.Length))
+        {
+            Config.InteractIndicatorStyle = (InteractIndicatorStyle)styleIdx;
+            Config.Save();
+        }
+
+        var color = Config.InteractIndicatorColor;
+        if (ImGui.ColorEdit4("Indicator color", ref color,
+                ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.NoInputs))
+        {
+            Config.InteractIndicatorColor = color;
+            Config.Save();
+        }
+
+        ImGui.EndDisabled();
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        // ── Audio ───────────────────────────────────────────────────────────
+        ImGui.TextDisabled("Sounds use the game's own UI sfx — they respect the");
+        ImGui.TextDisabled("System Sounds volume slider in FFXIV's settings.");
+        ImGui.Spacing();
+
+        DrawSfxRow("On first interaction (NPC / examine)",
+            "successsfx",
+            Config.PlayInteractSuccessSound,
+            Config.InteractSuccessSoundId,
+            (en, id) =>
+            {
+                Config.PlayInteractSuccessSound = en;
+                Config.InteractSuccessSoundId   = id;
+                Config.Save();
+            });
+
+        DrawSfxRow("On miss (no target found)",
+            "failsfx",
+            Config.PlayInteractFailSound,
+            Config.InteractFailSoundId,
+            (en, id) =>
+            {
+                Config.PlayInteractFailSound = en;
+                Config.InteractFailSoundId   = id;
+                Config.Save();
+            });
+
+        ImGui.TextDisabled("  Dialogue-advance presses stay silent — the game plays its own.");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        // ── Player examine ──────────────────────────────────────────────────
+        var examine = Config.InteractExaminePlayers;
+        if (ImGui.Checkbox("Interact key opens Examine on nearby players", ref examine))
+        {
+            Config.InteractExaminePlayers = examine;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Used only as a fallback — NPCs / event objects / aetherytes");
+        ImGui.TextDisabled("  win the cone first. Blocked while your weapon is drawn.");
+    }
+
+    /// <summary>
+    /// One row: enable checkbox + sound id input + "Test" button. The
+    /// game's UI sfx live roughly in the 1..80 range; 37..52 are the
+    /// configurable <c>&lt;se.1&gt;..&lt;se.16&gt;</c> chat alerts that
+    /// players can already audition in System Configuration. Test button
+    /// always plays regardless of the enable checkbox state.
+    /// </summary>
+    private static void DrawSfxRow(string label, string idSuffix, bool enabled, uint soundId, Action<bool, uint> apply)
+    {
+        var en = enabled;
+        if (ImGui.Checkbox($"{label}##en{idSuffix}", ref en))
+            apply(en, soundId);
+
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(80);
+        var idInt = (int)soundId;
+        if (ImGui.InputInt($"id##{idSuffix}", ref idInt))
+        {
+            if (idInt < 1)  idInt = 1;
+            if (idInt > 80) idInt = 80;
+            apply(en, (uint)idInt);
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button($"Test##{idSuffix}"))
+            Sfx.PlayTest((uint)idInt);
     }
 
     // ── Key picker helper ────────────────────────────────────────────────────
