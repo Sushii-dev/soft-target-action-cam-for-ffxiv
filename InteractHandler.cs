@@ -3,6 +3,7 @@ using System.Numerics;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
+using FFXIVClientStructs.FFXIV.Client.UI;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using ObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
 
@@ -24,8 +25,21 @@ namespace ActionCamera;
 ///
 /// Detection / advance patterns adapted from ECommons' AddonMaster files
 /// (the current canonical reference; YesAlready dropped ClickLib for these
-/// in 2024). FireCallback for list selections, button click for yes/no/ok,
-/// raw MouseDown/Click/Up event triplet for Talk.
+/// in 2024). FireCallback for list selections, simulated mouse click via
+/// <see cref="AddonClick.Click"/> for typed-button dialogs (Yesno/Ok/
+/// JournalAccept/JournalResult/MaterializeDialog), raw MouseDown/Click/Up
+/// event triplet for Talk.
+///
+/// History note (0.5.13.0 → 0.5.20.0): the typed-button paths were originally
+/// implemented with the same <c>FireCallback(1, [int 0])</c> shape as list
+/// selections. That call goes to the addon's main callback handler — for
+/// list addons it maps cleanly to "selected index 0", but for typed-button
+/// dialogs it hits the dialog's dismiss path, not the typed Accept/Yes/OK
+/// handler. Symptom was "pressing R closes the quest prompt without
+/// accepting". 0.5.20.0 switches them to <see cref="AddonClick.Click"/>,
+/// which replays the button's bound AtkEvent through the addon's
+/// ReceiveEvent — the same path the game runs on a real mouse click, so
+/// the typed handler actually fires.
 /// </summary>
 internal sealed unsafe class InteractHandler
 {
@@ -100,64 +114,48 @@ internal sealed unsafe class InteractHandler
     {
         var addr = GetVisibleAddon("SelectYesno");
         if (addr == null) return false;
-        // SelectYesno advances via FireCallback with int 0 = Yes, 1 = No.
-        // We always pick Yes — caller is responsible for warning the user
-        // that destructive prompts default through. No typed-button click
-        // path because FFXIVClientStructs doesn't expose ClickAddonButton.
-        var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
-        values[0].Int = 0;
-        addr->FireCallback(1, values, true);
-        return true;
+        // We always pick Yes. Caller / docs are responsible for warning the
+        // user that destructive prompts default through. RespectDisabledButtons-
+        // equivalent behaviour is built into AddonClick.Click (refuses to
+        // fire when the button's Enabled flag is off).
+        var typed = (AddonSelectYesno*)addr;
+        return AddonClick.Click(typed->YesButton, (AtkUnitBase*)typed);
     }
 
     private static bool TryClickOk()
     {
         var addr = GetVisibleAddon("SelectOk");
         if (addr == null) return false;
-        // SelectOk has no typed CS struct as of the time of writing; the
-        // standard advance pattern is the same FireCallback shape as list
-        // selections — index 0 = OK button.
-        var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
-        values[0].Int = 0;
-        addr->FireCallback(1, values, true);
-        return true;
+        var typed = (AddonSelectOk*)addr;
+        return AddonClick.Click(typed->OkButton, (AtkUnitBase*)typed);
     }
 
     private static bool TryClickJournalAccept()
     {
         var addr = GetVisibleAddon("JournalAccept");
         if (addr == null) return false;
-        // Accept = button index 44 in YesAlready's reference, but the simpler
-        // FireCallback-with-1 path also works for accepting quest offers.
-        var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
-        values[0].Int = 0;
-        addr->FireCallback(1, values, true);
-        return true;
+        // No typed CS struct as of FFXIVClientStructs main. ECommons resolves
+        // the Accept button via the addon's component-by-id lookup at id 44
+        // (decline is 45). The id is from ECommons' AddonMaster.JournalAccept
+        // and matches YesAlready / Henchman reference plugins.
+        var btn = addr->GetComponentButtonById(44);
+        return AddonClick.Click(btn, addr);
     }
 
     private static bool TryClickJournalResult()
     {
         var addr = GetVisibleAddon("JournalResult");
         if (addr == null) return false;
-        var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
-        values[0].Int = 0;
-        addr->FireCallback(1, values, true);
-        return true;
+        var typed = (AddonJournalResult*)addr;
+        return AddonClick.Click(typed->CompleteButton, (AtkUnitBase*)typed);
     }
 
     private static bool TryClickMaterializeDialog()
     {
         var addr = GetVisibleAddon("MaterializeDialog");
         if (addr == null) return false;
-        var values = stackalloc AtkValue[1];
-        values[0].Type = FFXIVClientStructs.FFXIV.Component.GUI.AtkValueType.Int;
-        values[0].Int = 0;
-        addr->FireCallback(1, values, true);
-        return true;
+        var typed = (AddonMaterializeDialog*)addr;
+        return AddonClick.Click(typed->YesButton, (AtkUnitBase*)typed);
     }
 
     /// <summary>

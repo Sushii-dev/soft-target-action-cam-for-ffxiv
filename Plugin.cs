@@ -98,7 +98,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggle action camera mode. Args: on | off | config | cleartarget | debug"
+            HelpMessage = "Toggle action camera mode. Args: on | off | config | cleartarget | debug | dumpaddon"
         });
 
         PluginInterface.UiBuilder.Draw += DrawUI;
@@ -414,6 +414,12 @@ public sealed class Plugin : IDalamudPlugin
             case "debug":
                 debugOverlay.Enabled = !debugOverlay.Enabled;
                 ChatGui.Print($"[ActionCamera] Cursor debug overlay: {(debugOverlay.Enabled ? "ON" : "OFF")}");
+                break;
+            case "dumpaddon":
+                // One-shot snapshot of every visible AtkUnitBase — addon name,
+                // AtkValue array, and button-id scan. Used to research which
+                // callback shape a misbehaving dialog expects. See AddonDumper.
+                AddonDumper.Dump();
                 break;
             default:
                 userWantsActive = !userWantsActive;
