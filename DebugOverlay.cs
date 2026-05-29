@@ -21,6 +21,7 @@ internal sealed unsafe class DebugOverlay
 {
     private readonly CursorUpdateHook? cursorUpdateHook;
     private readonly MouseOverSuppressor? mouseOverSuppressor;
+    private readonly SoftTargetSuppressor? softTargetSuppressor;
     private readonly Func<bool> isUserWantsActive;
     private readonly Func<bool> isCamActive;
     private readonly Func<bool> isMenuOpen;
@@ -44,6 +45,7 @@ internal sealed unsafe class DebugOverlay
     public DebugOverlay(
         CursorUpdateHook? cursorUpdateHook,
         MouseOverSuppressor? mouseOverSuppressor,
+        SoftTargetSuppressor? softTargetSuppressor,
         Func<bool> isUserWantsActive,
         Func<bool> isCamActive,
         Func<bool> isMenuOpen,
@@ -51,6 +53,7 @@ internal sealed unsafe class DebugOverlay
     {
         this.cursorUpdateHook = cursorUpdateHook;
         this.mouseOverSuppressor = mouseOverSuppressor;
+        this.softTargetSuppressor = softTargetSuppressor;
         this.isUserWantsActive = isUserWantsActive;
         this.isCamActive = isCamActive;
         this.isMenuOpen = isMenuOpen;
@@ -113,6 +116,21 @@ internal sealed unsafe class DebugOverlay
         else
         {
             ImGui.Text("MouseOverSuppressor: (null)");
+        }
+
+        ImGui.Separator();
+        if (softTargetSuppressor != null)
+        {
+            ImGui.Text("SoftTargetSuppressor (v0.6.9+):");
+            ImGui.Text($"  total calls:   {softTargetSuppressor.CallCount}");
+            ImGui.Text($"  suppressed:    {softTargetSuppressor.SuppressedCount}");
+            ImGui.Text($"  pass-through:  {softTargetSuppressor.PassThroughCount}");
+            ImGui.TextDisabled("  Spikes on click = game-side click handler is");
+            ImGui.TextDisabled("  calling SetSoftTarget directly. Should suppress.");
+        }
+        else
+        {
+            ImGui.Text("SoftTargetSuppressor: (null)");
         }
 
         ImGui.Separator();

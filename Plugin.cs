@@ -46,6 +46,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DebugOverlay debugOverlay;
     private readonly MouseBindController mouseBindController;
     private readonly MouseOverSuppressor mouseOverSuppressor;
+    private readonly SoftTargetSuppressor softTargetSuppressor;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -115,9 +116,22 @@ public sealed class Plugin : IDalamudPlugin
         // predicate stays true through the entire click.
         mouseOverSuppressor = new MouseOverSuppressor(() => userWantsActive);
 
+        // Pair to MouseOverSuppressor. v0.6.8 closed the GetMouseOverObject
+        // path but the game's click handler ALSO reads the cached
+        // ts->MouseOverTarget FIELD directly (which TargetSelector keeps
+        // populated each frame as part of the cone-targeting feature) and
+        // calls SetSoftTarget off that. The setter itself fires the
+        // "target acquired" animation + SFX — plugin's direct-field
+        // writes don't trigger this hook because they don't call the
+        // function. Blocking the function rejects only game-side
+        // acquisition calls; plugin's cone-driven SoftTarget writes
+        // continue uninterrupted.
+        softTargetSuppressor = new SoftTargetSuppressor(() => userWantsActive);
+
         debugOverlay = new DebugOverlay(
             cursorUpdateHook,
             mouseOverSuppressor,
+            softTargetSuppressor,
             () => userWantsActive,
             () => cameraController.IsActive,
             IsMenuOpen,
@@ -165,6 +179,7 @@ public sealed class Plugin : IDalamudPlugin
         cursorShowHook.Dispose();
         cursorUpdateHook.Dispose();
         mouseOverSuppressor.Dispose();
+        softTargetSuppressor.Dispose();
         cameraController.Dispose();
     }
 
