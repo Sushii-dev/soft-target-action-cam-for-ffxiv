@@ -28,7 +28,7 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IPartyList PartyList { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
-    private const string CommandName = "/actioncam";
+    private const string CommandName = "/veiled";
 
     public Configuration Configuration { get; init; }
     public readonly WindowSystem WindowSystem = new("ActionCamera");
@@ -193,7 +193,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggle action camera mode. Args: on | off | config | cleartarget | debug | dumpaddon | testfire <bar> <slot>"
+            HelpMessage = "Veiled Aim: toggle action camera. Args: on | off | config | cleartarget | debug | dumpaddon | testfire <bar> <slot>"
         });
 
         PluginInterface.UiBuilder.Draw += DrawUI;
@@ -592,11 +592,11 @@ public sealed class Plugin : IDalamudPlugin
         {
             case "on":
                 userWantsActive = true;
-                ChatGui.Print("[ActionCamera] Activated.");
+                ChatGui.Print("[Veiled Aim] Activated.");
                 break;
             case "off":
                 userWantsActive = false;
-                ChatGui.Print("[ActionCamera] Deactivated.");
+                ChatGui.Print("[Veiled Aim] Deactivated.");
                 break;
             case "config":
                 ConfigWindow.IsOpen = true;
@@ -606,7 +606,7 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             case "debug":
                 debugOverlay.Enabled = !debugOverlay.Enabled;
-                ChatGui.Print($"[ActionCamera] Cursor debug overlay: {(debugOverlay.Enabled ? "ON" : "OFF")}");
+                ChatGui.Print($"[Veiled Aim] Cursor debug overlay: {(debugOverlay.Enabled ? "ON" : "OFF")}");
                 break;
             case "dumpaddon":
                 // One-shot snapshot of every visible AtkUnitBase — addon name,
@@ -623,7 +623,7 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             default:
                 userWantsActive = !userWantsActive;
-                ChatGui.Print(userWantsActive ? "[ActionCamera] Activated." : "[ActionCamera] Deactivated.");
+                ChatGui.Print(userWantsActive ? "[Veiled Aim] Activated." : "[Veiled Aim] Deactivated.");
                 break;
         }
     }
@@ -637,19 +637,19 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (parts.Length < 3)
         {
-            ChatGui.Print("[ActionCamera] Usage: /actioncam testfire <bar 0-17> <slot 0-15>");
+            ChatGui.Print("[Veiled Aim] Usage: /veiled testfire <bar 0-17> <slot 0-15>");
             return;
         }
 
         if (!uint.TryParse(parts[1], out var bar) || !uint.TryParse(parts[2], out var slot))
         {
-            ChatGui.Print("[ActionCamera] testfire: bar and slot must be non-negative integers.");
+            ChatGui.Print("[Veiled Aim] testfire: bar and slot must be non-negative integers.");
             return;
         }
 
         HotbarFirer.TryGetSlotPreview(bar, slot, out var label, out _);
         var fired = HotbarFirer.Fire(bar, slot);
-        ChatGui.Print($"[ActionCamera] testfire bar={bar} slot={slot} -> {label}: {(fired ? "fired" : "skipped")}");
+        ChatGui.Print($"[Veiled Aim] testfire bar={bar} slot={slot} -> {label}: {(fired ? "fired" : "skipped")}");
     }
 
     private void DrawUI()

@@ -35,7 +35,11 @@ public sealed class ConfigWindow : Window, IDisposable
     private static readonly VirtualKey[] AllVirtualKeys = (VirtualKey[])Enum.GetValues(typeof(VirtualKey));
 
     public ConfigWindow(Plugin plugin)
-        : base("Action Camera Settings###ActionCameraConfig")
+        // Visible title rebranded to Veiled Aim; the ###id is kept as
+        // ActionCameraConfig so existing users' saved window position /
+        // size carry over (ImGui keys window state off the id, not the
+        // title).
+        : base("Veiled Aim (BDO + ER)###ActionCameraConfig")
     {
         this.plugin = plugin;
         SizeConstraints = new WindowSizeConstraints
@@ -49,21 +53,44 @@ public sealed class ConfigWindow : Window, IDisposable
 
     public override void Draw()
     {
-        DrawActivationSection();
-        ImGui.Separator();
-        DrawMouseSection();
-        ImGui.Separator();
-        DrawCharacterSection();
-        ImGui.Separator();
-        DrawTargetingSection();
-        ImGui.Separator();
-        DrawInteractFeedbackSection();
-        ImGui.Separator();
-        DrawReticleSection();
-        ImGui.Separator();
-        DrawCameraLimitsSection();
-        ImGui.Separator();
-        DrawMouseBindsSection();
+        // Tab bar groups the (formerly one long scroll of) sections by
+        // topic. Tab ids are stable strings so layout persists.
+        if (!ImGui.BeginTabBar("###VeiledTabs"))
+            return;
+
+        if (ImGui.BeginTabItem("Camera"))
+        {
+            DrawActivationSection();
+            ImGui.Separator();
+            DrawMouseSection();
+            ImGui.Separator();
+            DrawCharacterSection();
+            ImGui.Separator();
+            DrawCameraLimitsSection();
+            ImGui.Separator();
+            DrawReticleSection();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("Targeting"))
+        {
+            DrawTargetingSection();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("Interact"))
+        {
+            DrawInteractFeedbackSection();
+            ImGui.EndTabItem();
+        }
+
+        if (ImGui.BeginTabItem("Mouse Binds"))
+        {
+            DrawMouseBindsSection();
+            ImGui.EndTabItem();
+        }
+
+        ImGui.EndTabBar();
     }
 
     // ── Activation ───────────────────────────────────────────────────────────
@@ -78,7 +105,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.SameLine();
         DrawKeyPicker("actkey", Config.ActivationKey,
             k => Config.ActivationKey = k, ref listeningForKey,
-            noneLabel: "(none – use /actioncam)");
+            noneLabel: "(none – use /veiled)");
 
         ImGui.Spacing();
 
@@ -318,7 +345,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.SameLine();
         DrawKeyPicker("clearkey", Config.ClearHardTargetKey,
             k => Config.ClearHardTargetKey = k, ref listeningForClearKey,
-            noneLabel: "(none – use /actioncam cleartarget)");
+            noneLabel: "(none – use /veiled cleartarget)");
         ImGui.TextDisabled("  Edge-triggered: clears the current hard target on key down.");
 
         ImGui.EndDisabled();
@@ -600,7 +627,7 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled("  optional Shift / Ctrl / Alt modifier — while the camera is active");
         ImGui.TextDisabled("  AND the cursor is hidden. Does NOT touch in-game keybinds; binds");
         ImGui.TextDisabled("  resolve a live hotbar slot, so they follow job changes automatically.");
-        ImGui.TextDisabled("  Use /actioncam testfire <bar> <slot> to verify a slot ingame.");
+        ImGui.TextDisabled("  Use /veiled testfire <bar> <slot> to verify a slot ingame.");
         ImGui.Spacing();
 
         var enabled = Config.BetaMouseBindsEnabled;
