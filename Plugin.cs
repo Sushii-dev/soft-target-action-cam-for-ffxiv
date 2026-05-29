@@ -238,6 +238,27 @@ public sealed class Plugin : IDalamudPlugin
         // for this frame, so the gate stack sees the same view of "are we
         // in cursor-locked mode" that the rest of the systems do.
         mouseBindController.Update();
+
+        // v0.6.12: keep MouseOverNameplateTarget (+0xE0) clear while cam
+        // intent is on. Decomp research traced the LMB-release soft-target
+        // reseat (the acquire ring pulse + sound) to the click-confirm
+        // handler reading this field directly and inlining a SoftTarget
+        // write — bypassing SetSoftTarget (counter 0) and the
+        // GetMouseOverObject / GetInputStatus hooks entirely. With the
+        // cursor hidden + center-locked, nameplate-mouseover is
+        // meaningless, so zeroing the field every frame denies the
+        // handler any target to reseat without affecting anything the
+        // user can see or use.
+        if (userWantsActive)
+            ClearNameplateMouseover();
+    }
+
+    private static unsafe void ClearNameplateMouseover()
+    {
+        var ts = FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance();
+        if (ts == null) return;
+        if (ts->MouseOverNameplateTarget != null)
+            ts->MouseOverNameplateTarget = null;
     }
 
     /// <summary>
@@ -577,6 +598,14 @@ public sealed class Plugin : IDalamudPlugin
         {
             cameraController.RequestHideCursor();
         }
+
+        // v0.6.12: render-time mirror of the framework-update nameplate
+        // clear. The click-confirm handler can run on an input event
+        // between Framework.Update and the render pass, so re-zero +0xE0
+        // here too — same belt-and-suspenders pattern the cursor re-Hide
+        // above uses for the same timing reason.
+        if (userWantsActive)
+            ClearNameplateMouseover();
 
         // BETA mouse-binds (v0.6.4): render-time SoftTarget restore.
         //
