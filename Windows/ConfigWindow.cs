@@ -16,6 +16,9 @@ public sealed class ConfigWindow : Window, IDisposable
     private bool listeningForClearKey;
     private bool listeningForHardKey;
     private bool listeningForInteractKey;
+    private bool listeningForNeedKey;
+    private bool listeningForGreedKey;
+    private bool listeningForPassKey;
 
     // Which mouse-bind row (if any) currently has its button picker open.
     // Tracked by reference so add/remove of OTHER rows in MouseBinds
@@ -471,6 +474,33 @@ public sealed class ConfigWindow : Window, IDisposable
         }
         ImGui.TextDisabled("  Used only as a fallback — NPCs / event objects / aetherytes");
         ImGui.TextDisabled("  win the cone first. Blocked while your weapon is drawn.");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        // ── Loot roll quick-keys ────────────────────────────────────────────
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Loot Rolling");
+        ImGui.TextDisabled("  When a loot-roll window is up, these roll on every");
+        ImGui.TextDisabled("  active item at once. Work in any camera state; blocked");
+        ImGui.TextDisabled("  while typing.");
+        ImGui.Spacing();
+
+        ImGui.Text("Need:");
+        ImGui.SameLine();
+        DrawKeyPicker("needkey", Config.NeedRollKey,
+            k => Config.NeedRollKey = k, ref listeningForNeedKey);
+
+        ImGui.Text("Greed:");
+        ImGui.SameLine();
+        DrawKeyPicker("greedkey", Config.GreedRollKey,
+            k => Config.GreedRollKey = k, ref listeningForGreedKey);
+
+        ImGui.Text("Pass:");
+        ImGui.SameLine();
+        DrawKeyPicker("passkey", Config.PassRollKey,
+            k => Config.PassRollKey = k, ref listeningForPassKey);
+        ImGui.TextDisabled("  Need skips items you can't need on (job/restriction).");
     }
 
     /// <summary>

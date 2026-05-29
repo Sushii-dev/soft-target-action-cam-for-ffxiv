@@ -244,6 +244,15 @@ public class Configuration : IPluginConfiguration
     // strangers mid-fight).
     public bool InteractExaminePlayers { get; set; } = true;
 
+    // --- Loot roll quick-keys (v0.6.28) ---
+    //
+    // When a loot-roll window is up, these fire Need / Greed / Pass on
+    // every active rollable item without mousing to the window. Work
+    // regardless of camera state; blocked while typing.
+    public VirtualKey NeedRollKey  { get; set; } = VirtualKey.NO_KEY;
+    public VirtualKey GreedRollKey { get; set; } = VirtualKey.NO_KEY;
+    public VirtualKey PassRollKey  { get; set; } = VirtualKey.NO_KEY;
+
     // --- Vertical camera limits ---
     // These mirror the game's own limits and can be tightened by the user.
     public float MinVRotationOverride { get; set; } = -1.45f;   // ~-83°

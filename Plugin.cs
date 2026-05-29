@@ -50,6 +50,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly InputStatusSuppressor inputStatusSuppressor;
     private readonly SoftTargetGuard softTargetGuard;
     private readonly SoundSuppressor soundSuppressor;
+    private readonly LootRoller lootRoller;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -61,6 +62,9 @@ public sealed class Plugin : IDalamudPlugin
     private bool clearTargetKeyWasDown;
     private bool hardTargetKeyWasDown;
     private bool interactKeyWasDown;
+    private bool needRollKeyWasDown;
+    private bool greedRollKeyWasDown;
+    private bool passRollKeyWasDown;
     private bool wasExemptedLastTick;
 
     public Plugin()
@@ -167,6 +171,8 @@ public sealed class Plugin : IDalamudPlugin
                   && Configuration.MutedSoftTargetSoundIds.Contains(id),
             () => debugOverlay != null && debugOverlay.Enabled);
 
+        lootRoller = new LootRoller();
+
         debugOverlay = new DebugOverlay(
             cursorUpdateHook,
             mouseOverSuppressor,
@@ -256,6 +262,7 @@ public sealed class Plugin : IDalamudPlugin
         HandleClearTargetKey(menuOpen);
         HandleHardTargetKey(menuOpen);
         HandleInteractKey();
+        HandleLootRollKeys();
         ReconcileCursorSync();
         cameraController.Update();
         // RotationDriver runs after camera so it reads the freshly-updated yaw.
@@ -525,6 +532,34 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             // AdvancedDialogue intentionally falls through silent.
         }
+    }
+
+    /// <summary>
+    /// Need / Greed / Pass quick-roll keys. Edge-triggered; work in any
+    /// camera state (the loot window is independent of the camera), but
+    /// never while typing. LootRoller.RollAll no-ops when no loot window
+    /// is up, so a stray press does nothing.
+    /// </summary>
+    private void HandleLootRollKeys()
+    {
+        RollKey(Configuration.NeedRollKey,  ref needRollKeyWasDown,  LootRoller.OptionNeed);
+        RollKey(Configuration.GreedRollKey, ref greedRollKeyWasDown, LootRoller.OptionGreed);
+        RollKey(Configuration.PassRollKey,  ref passRollKeyWasDown,  LootRoller.OptionPass);
+    }
+
+    private void RollKey(Dalamud.Game.ClientState.Keys.VirtualKey key, ref bool wasDown, uint option)
+    {
+        if (key == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY)
+        {
+            wasDown = false;
+            return;
+        }
+        var isDown = InputBinding.IsDown(key);
+        var rising = isDown && !wasDown;
+        wasDown = isDown;
+        if (!rising) return;
+        if (IsGameTextInputActive()) return;
+        lootRoller.RollAll(option);
     }
 
     /// <summary>
