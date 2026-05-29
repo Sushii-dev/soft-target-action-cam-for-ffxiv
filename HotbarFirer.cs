@@ -13,10 +13,17 @@ namespace ActionCamera;
 ///
 /// All gating (cam active, cursor hidden, focused, menu, ImGui) lives in
 /// <see cref="MouseBindController"/>; this class is dumb and just makes
-/// the call. The <see cref="Fire"/> method does spam-protection via
-/// <c>ActionManager.GetActionStatus</c> for the Action / Item paths so
-/// that clicking through a GCD doesn't fill the screen with "Unable to
-/// use that action now" toasts. Empty slots short-circuit silently.
+/// the call.
+///
+/// Action / CraftAction fire through <c>ActionManager.UseAction</c> in
+/// native mode, which reproduces real-keypress semantics including the
+/// game's input QUEUE — a press during the GCD / animation-lock tail is
+/// buffered and auto-fires when the GCD clears, so binds feel as
+/// responsive as native hotbar keys (v0.6.24). The pre-fire
+/// <c>GetActionStatus</c> check runs with cooldown checks disabled, so it
+/// blocks only genuinely-unusable presses (no target / range / job /
+/// resources) — keeping "Unable to use that action now" toasts rare
+/// without defeating the queue. Empty slots short-circuit silently.
 /// </summary>
 internal static unsafe class HotbarFirer
 {
@@ -83,31 +90,46 @@ internal static unsafe class HotbarFirer
         if (t == RaptureHotbarModule.HotbarSlotType.Action ||
             t == RaptureHotbarModule.HotbarSlotType.CraftAction)
         {
-            // Spam gate: skip when the action is on cooldown / unusable.
-            // The game emits an "Unable to use that action now" toast on
-            // each failed call; rapid-fire clicks mid-GCD would fill the
-            // screen with toasts without this guard.
-            if (am->GetActionStatus(ActionType.Action, slot->CommandId) != 0)
-                return false;
-
             var targetId = ResolveExplicitTarget();
             if (targetId != EmptyTargetId)
             {
-                // Direct fire with explicit target — no promotion path
-                // runs game-side, no flicker UI cue. Self-cast and party-
-                // target actions are silently retargeted by the game via
-                // the action's own target rules, so passing a hostile id
-                // for a defensive cooldown is harmless.
+                // Queueable gate (v0.6.24): check status with cooldown
+                // checks DISABLED. A rolling GCD / active cast then reads
+                // as usable (0), so the press flows through to UseAction —
+                // which, in native mode, auto-queues it to fire the instant
+                // the GCD clears, exactly like a real keybind. Only truly-
+                // unusable presses (no/invalid target, out of range, wrong
+                // job, not enough resources) return non-zero and are
+                // dropped, keeping "Unable to use that action now" toasts
+                // rare. Edge-fire means at most one toast per press.
+                //
+                // Previously this gate used the default checkRecastActive:
+                // true, which aborted during the GCD tail and prevented
+                // queueing — the felt unresponsiveness vs native binds.
+                if (am->GetActionStatus(ActionType.Action, slot->CommandId, targetId,
+                        checkRecastActive: false, checkCastingActive: false) != 0)
+                    return false;
+
+                // Direct fire with explicit target, native mode (default).
+                // Native mode = real-keypress semantics: fires now if ready,
+                // auto-queues if within the GCD/anim-lock window. Explicit
+                // target avoids slot re-resolution → no soft→hard promotion.
                 return am->UseAction(ActionType.Action, slot->CommandId, targetId);
             }
 
             // No target resolvable — fall through to ExecuteSlotById so
             // area-targeted (ground reticle) actions get their normal
-            // null-target dispatch.
+            // null-target dispatch. ExecuteSlotById is the keypress path
+            // and native-queues too.
         }
         else if (t == RaptureHotbarModule.HotbarSlotType.Item)
         {
-            if (am->GetActionStatus(ActionType.Item, slot->CommandId) != 0)
+            // Same queueable gate for items (cooldown ignored). Items
+            // largely don't participate in the GCD queue, but matching
+            // native keypress behaviour via ExecuteSlotById below is
+            // correct either way.
+            if (am->GetActionStatus(ActionType.Item, slot->CommandId, EmptyTargetId,
+                    checkRecastActive: false, checkCastingActive: false) != 0)
                 return false;
         }
 
