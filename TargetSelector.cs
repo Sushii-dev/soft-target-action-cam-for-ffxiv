@@ -13,6 +13,13 @@ namespace ActionCamera;
 public sealed unsafe class TargetSelector
 {
     private const int ScanIntervalFrames = 3;
+
+    // Post-LMB-release skip-write window (v0.6.11). After this many
+    // milliseconds with no LMB activity, plugin resumes per-frame
+    // MouseOverTarget + SoftTarget writes. Long enough to bridge the
+    // game's release-handler completing its work; short enough that
+    // the user perceives the ring as steady during normal play.
+    private const int SoftTargetSuppressWindowMs = 200;
     private int frameCounter = ScanIntervalFrames;
     private IGameObject? cachedBest;
     // Entity whose outline we last painted yellow. Tracked so we can reset its
@@ -64,6 +71,25 @@ public sealed unsafe class TargetSelector
             return;
         }
         wasPausedByHardTarget = false;
+
+        // v0.6.11: pause MouseOverTarget + SoftTarget writes during a
+        // window after any LMB activity. v0.6.6–v0.6.10's three-prong
+        // suppressor stack (GetMouseOverObject + SetSoftTarget +
+        // GetInputStatus) didn't kill the click-target reattach
+        // animation — confirmed via counters that none of the hooked
+        // functions are on the path the game uses to queue the cue.
+        // The game writes SoftTarget = null directly to memory during
+        // the release event, then plugin's per-frame restore creates
+        // a null→enemy pointer transition that fires the "newly
+        // acquired" animation + SFX.
+        //
+        // Skipping plugin writes during the post-click window lets
+        // whatever state the game left behind stand — no transition
+        // for the game's UI subsystem to animate. Cost: red ring
+        // briefly disappears around the click instead of flickering.
+        // Trade subtle disappearance for the loud acquire cue.
+        if (InputBinding.WasLmbDownWithin(SoftTargetSuppressWindowMs))
+            return;
 
         if (config.WriteMouseOverTarget)
         {
