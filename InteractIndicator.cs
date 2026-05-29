@@ -108,7 +108,7 @@ public sealed class InteractIndicator
             case InteractIndicatorStyle.ScreenBracketsLarge:
                 DrawScreenBrackets(dl, target, col, 16f, 0.35f, 1.00f, emissive, pulse); break;
             case InteractIndicatorStyle.ScreenBracketsTight:
-                DrawScreenBrackets(dl, target, col, 16f, 0.22f, 0.75f, emissive, pulse); break;
+                DrawScreenBrackets(dl, target, col, 16f, 0.22f, 0.75f, emissive, pulse, centerBiasFactor: 0.12f); break;
         }
     }
 
@@ -308,7 +308,8 @@ public sealed class InteractIndicator
         float halfWidthFactor,
         float heightFactor,
         bool emissive,
-        float pulse)
+        float pulse,
+        float centerBiasFactor = 0f)
     {
         var headWorld = HeadAnchor(t);
         var feetWorld = t.Position;
@@ -322,8 +323,12 @@ public sealed class InteractIndicator
         var rawHeight = MathF.Max(20f, MathF.Abs(botScreen.Y - topScreen.Y));
         // heightFactor < 1 shrinks the frame around the midline — used by
         // the "tight" variant. Recompute top/bottom relative to centerY so
-        // the smaller frame stays centred on the target.
-        var centerY = (topScreen.Y + botScreen.Y) * 0.5f;
+        // the smaller frame stays centred on the target. The head anchor
+        // sits ~2.2y above the feet, so the raw midline lands at upper-
+        // torso/chest — a shrunk frame there reads as "too high". A
+        // positive centerBiasFactor nudges the frame down (screen Y grows
+        // downward) toward true body-centre for the tight variant.
+        var centerY = (topScreen.Y + botScreen.Y) * 0.5f + rawHeight * centerBiasFactor;
         var height  = rawHeight * heightFactor;
         var topY    = centerY - height * 0.5f;
         var botY    = centerY + height * 0.5f;
