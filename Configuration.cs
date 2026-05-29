@@ -33,6 +33,14 @@ public class MouseBind
     public MouseBindModifier Modifier { get; set; } = MouseBindModifier.None;
     public uint HotbarId { get; set; } = 0;
     public uint SlotId { get; set; } = 0;
+
+    // When true, holding the button re-attempts the fire every frame —
+    // which, with the native input queue, auto-fires the slot each GCD
+    // for as long as it's held (matches holding a native hotbar key).
+    // When false, only the initial press fires (one fire per press).
+    // Defaults true so existing binds gain hold behaviour on update
+    // (missing JSON field keeps the initialized value).
+    public bool RepeatWhileHeld { get; set; } = true;
 }
 
 [Serializable]

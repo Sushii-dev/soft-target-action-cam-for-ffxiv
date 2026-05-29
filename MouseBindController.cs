@@ -93,7 +93,18 @@ internal sealed class MouseBindController
             prevDown.TryGetValue(bind, out var prev);
             prevDown[bind] = down;
 
-            if (!down || prev) continue;
+            if (!down) continue;
+
+            // Edge-only binds fire once per press (rising edge). Hold-
+            // repeat binds re-attempt every frame while held — HotbarFirer
+            // gates on castability and UseAction native-queues, so each
+            // frame either fires, queues, or no-ops silently; the net
+            // effect is the slot firing every GCD for as long as it's
+            // held, matching a held native hotbar key. No toast spam
+            // (the queueable gate blocks only truly-unusable presses).
+            var rising = !prev;
+            if (!bind.RepeatWhileHeld && !rising) continue;
+
             if (!ModifierMatches(bind.Modifier, shiftDown, ctrlDown, altDown)) continue;
 
             // Snapshot SoftTarget before fire. UseAction internally

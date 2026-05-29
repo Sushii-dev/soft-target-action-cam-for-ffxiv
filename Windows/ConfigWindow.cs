@@ -722,6 +722,18 @@ public sealed class ConfigWindow : Window, IDisposable
         }
 
         ImGui.SameLine();
+        var hold = bind.RepeatWhileHeld;
+        if (ImGui.Checkbox("Hold##hold", ref hold))
+        {
+            bind.RepeatWhileHeld = hold;
+            Config.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Repeat while held: holding the button re-uses the slot\n" +
+                             "every GCD (like holding a native hotbar key).\n" +
+                             "Off = fires once per press.");
+
+        ImGui.SameLine();
         var remove = ImGui.SmallButton("Remove##rm");
 
         if (HotbarFirer.TryGetSlotPreview(bind.HotbarId, bind.SlotId, out var preview, out _))
