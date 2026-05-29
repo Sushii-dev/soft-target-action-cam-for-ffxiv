@@ -1,44 +1,45 @@
 using System;
+using System.Runtime.InteropServices;
 using Dalamud.Hooking;
 
 namespace ActionCamera;
 
 /// <summary>
-/// Hooks UIGlobals.PlaySoundEffect — the game's UI sound-effect entry
-/// point — so the soft-target "acquired" sound can be muted while the
-/// action camera is active. That sound fires fire-and-forget at target-
-/// commit time (which is why it survived the v0.6.16 reticle-pulse fix:
-/// the +0x88 re-pin stops the visual animation but not this separate
-/// sound call).
+/// Mutes the soft-target "acquired" sound while the action camera is
+/// active. The sound is effect id 11 (confirmed via the interact
+/// sound-tester), but the game does NOT emit it through
+/// UIGlobals.PlaySoundEffect — runtime counters proved that hook stays
+/// flat on the target-acquire event. It goes one layer deeper, through
+/// SoundManager's InitSound funnel (the function VFXEditor hooks for
+/// sound replacement — every game sound passes through it).
 ///
-/// The exact effect id for the target-acquire sound isn't reliably
-/// documented, so this also supports a discovery mode: while the debug
-/// overlay is on and a left-click happened in the last ~150ms, every
-/// played effect id is logged. Click on a soft-targeted enemy, read the
-/// id that fires, and that becomes the muted id.
-///
-/// Suppression is scoped: only the configured id is dropped, and only
-/// while the predicate (cam active) is true. Every other UI sound passes
-/// through untouched.
+/// We hook InitSound, and while the predicate is true drop calls whose
+/// sound index matches the configured id (returning a null SoundData*,
+/// the same suppression VFXEditor uses). The resource path is logged in
+/// discovery mode so the match can be tightened to a specific path if
+/// matching on index alone proves too broad.
 /// </summary>
 internal sealed unsafe class SoundSuppressor : IDisposable
 {
-    // UIGlobals.PlaySoundEffect(uint effectId, SoundData** pad, SoundData** data, byte a4).
-    // We only care about the id; the pointer args pass through opaque.
-    private delegate void PlaySoundEffectDelegate(uint effectId, nint a2, nint a3, byte a4);
+    // SoundManager::InitSound — the sound-instantiation funnel.
+    //   SoundData* InitSound(SoundManager* mgr, char* path, float volume,
+    //                        uint soundIdx, uint unk1, bool unk2,
+    //                        SoundVolumeCategory category)
+    // Raw types (nint / byte* / primitives) used so we don't need the
+    // FFXIVClientStructs SoundData / SoundVolumeCategory types; the ABI
+    // matches (pointer-sized return + args, bool→byte, enum→uint).
+    private delegate nint InitSoundDelegate(
+        nint manager, byte* path, float volume,
+        uint soundIdx, uint unk1, byte unk2, uint category);
 
-    private readonly Hook<PlaySoundEffectDelegate>? hook;
+    private readonly Hook<InitSoundDelegate>? hook;
     private readonly Func<bool> isCamActive;
     private readonly Func<uint> getMutedId;
     private readonly Func<bool> shouldLog;
 
-    // Live diagnostics surfaced in DebugOverlay. CallCount confirms the
-    // hook is on a function the game actually calls (rises on any UI
-    // sound); LastId / LastIdInCam show the most-recent effect id so the
-    // soft-target-acquire id can be read off the overlay without xllog.
-    public long CallCount     { get; private set; }
-    public uint LastId        { get; private set; }
-    public uint LastIdInCam   { get; private set; }
+    public long CallCount       { get; private set; }
+    public uint LastId          { get; private set; }
+    public uint LastIdInCam     { get; private set; }
     public long SuppressedCount { get; private set; }
 
     public SoundSuppressor(Func<bool> isCamActive, Func<uint> getMutedId, Func<bool> shouldLog)
@@ -49,46 +50,43 @@ internal sealed unsafe class SoundSuppressor : IDisposable
 
         try
         {
-            // Call-site signature (resolves the CALL target). Same shape
-            // FFXIVClientStructs uses for UIGlobals.PlaySoundEffect's
-            // MemberFunction attribute.
-            hook = Plugin.GameInterop.HookFromSignature<PlaySoundEffectDelegate>(
-                "E8 ?? ?? ?? ?? 45 0F B7 C5", Detour);
+            // VFXEditor's InitSound signature — every sound funnels here.
+            hook = Plugin.GameInterop.HookFromSignature<InitSoundDelegate>(
+                "E8 ?? ?? ?? ?? 8B 5D 77", Detour);
             hook.Enable();
-            Plugin.Log.Information("SoundSuppressor: PlaySoundEffect hook installed.");
+            Plugin.Log.Information("SoundSuppressor: InitSound hook installed.");
         }
         catch (Exception ex)
         {
-            Plugin.Log.Error(ex, "[ActionCamera] Failed to hook PlaySoundEffect.");
+            Plugin.Log.Error(ex, "[ActionCamera] Failed to hook InitSound.");
         }
     }
 
-    private void Detour(uint effectId, nint a2, nint a3, byte a4)
+    private nint Detour(nint manager, byte* path, float volume,
+        uint soundIdx, uint unk1, byte unk2, uint category)
     {
         CallCount++;
-        LastId = effectId;
+        LastId = soundIdx;
 
         if (isCamActive())
         {
-            LastIdInCam = effectId;
+            LastIdInCam = soundIdx;
 
-            // Discovery: log every effect id while cam active + debug
-            // overlay on. Camera-pan soft-target switches have no LMB, so
-            // the previous LMB-window gate missed them — this catches any
-            // trigger. Cam mode has little ambient UI sound, so the
-            // acquire id stands out.
             if (shouldLog())
-                Plugin.Log.Information($"[Veiled] PlaySoundEffect id={effectId}");
+            {
+                var p = path != null ? Marshal.PtrToStringAnsi((nint)path) ?? "" : "";
+                Plugin.Log.Information($"[Veiled] InitSound idx={soundIdx} cat={category} path={p}");
+            }
 
             var muted = getMutedId();
-            if (muted != 0 && effectId == muted)
+            if (muted != 0 && soundIdx == muted)
             {
                 SuppressedCount++;
-                return; // drop only the configured id while cam active
+                return nint.Zero; // suppress: no SoundData created, no playback
             }
         }
 
-        hook!.Original(effectId, a2, a3, a4);
+        return hook!.Original(manager, path, volume, soundIdx, unk1, unk2, category);
     }
 
     public void Dispose()
