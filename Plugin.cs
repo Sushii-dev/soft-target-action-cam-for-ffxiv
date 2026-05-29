@@ -386,7 +386,14 @@ public sealed class Plugin : IDalamudPlugin
         // Re-read cursor visibility after the potential re-Hide above.
         cursorVisible = CameraController.IsGameCursorVisible();
 
-        var shouldBeActive = !cursorVisible || rbHeld;
+        // rbHeld force-activates the cam so a vanilla RMB-drag can rotate
+        // even when the cam is toggled off (BDO-style always-available
+        // look). But when RMB is BOUND to a skill it is NOT a camera
+        // gesture, so holding it must NOT activate the cam — otherwise a
+        // right-CLICK (to open a target's context menu) briefly activates
+        // the cam, hides the cursor, and the menu never opens. Gate the
+        // rbHeld clause on RMB being unbound.
+        var shouldBeActive = !cursorVisible || (rbHeld && !IsRmbBoundToFire());
 
         if (shouldBeActive && !cameraController.IsActive)
             cameraController.Activate();
