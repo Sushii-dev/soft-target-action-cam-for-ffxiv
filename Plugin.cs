@@ -45,6 +45,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CursorUpdateHook cursorUpdateHook;
     private readonly DebugOverlay debugOverlay;
     private readonly MouseBindController mouseBindController;
+    private readonly MouseOverSuppressor mouseOverSuppressor;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -91,6 +92,20 @@ public sealed class Plugin : IDalamudPlugin
         // actually reads). This is the path the Show hook can't reach and
         // is the root-cause target for the scroll-zoom flicker.
         cursorUpdateHook = new CursorUpdateHook(shouldSuppress);
+
+        // Hook TargetSystem::GetMouseOverObject and return null while the
+        // action camera is active. With cursor hidden + center-locked,
+        // every LMB / RMB click ray-hits whatever entity is at the
+        // crosshair — game's input-pipeline release-handler runs the
+        // click-target acquisition chain off that ray-pick result and
+        // queues the "target acquired" animation + sound (the user
+        // playtest jank since v0.6.x). Returning null upstream of the
+        // chain kills the whole acquisition path: no sound, no reticle
+        // re-attach animation, no SetSoftTarget call, no SetHardTarget
+        // call. Same pattern SimpleTweaks' DisableClickTargeting uses.
+        mouseOverSuppressor = new MouseOverSuppressor(
+            () => cameraController.IsActive
+                  && !CameraController.IsGameCursorVisible());
 
         debugOverlay = new DebugOverlay(
             cursorUpdateHook,
@@ -140,6 +155,7 @@ public sealed class Plugin : IDalamudPlugin
         // back to its natural state once the plugin is gone).
         cursorShowHook.Dispose();
         cursorUpdateHook.Dispose();
+        mouseOverSuppressor.Dispose();
         cameraController.Dispose();
     }
 
