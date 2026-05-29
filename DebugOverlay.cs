@@ -20,6 +20,7 @@ namespace ActionCamera;
 internal sealed unsafe class DebugOverlay
 {
     private readonly CursorUpdateHook? cursorUpdateHook;
+    private readonly MouseOverSuppressor? mouseOverSuppressor;
     private readonly Func<bool> isUserWantsActive;
     private readonly Func<bool> isCamActive;
     private readonly Func<bool> isMenuOpen;
@@ -42,12 +43,14 @@ internal sealed unsafe class DebugOverlay
 
     public DebugOverlay(
         CursorUpdateHook? cursorUpdateHook,
+        MouseOverSuppressor? mouseOverSuppressor,
         Func<bool> isUserWantsActive,
         Func<bool> isCamActive,
         Func<bool> isMenuOpen,
         Func<bool> isRmbHeld)
     {
         this.cursorUpdateHook = cursorUpdateHook;
+        this.mouseOverSuppressor = mouseOverSuppressor;
         this.isUserWantsActive = isUserWantsActive;
         this.isCamActive = isCamActive;
         this.isMenuOpen = isMenuOpen;
@@ -95,6 +98,21 @@ internal sealed unsafe class DebugOverlay
         else
         {
             ImGui.Text("UpdateCursor hook: (null)");
+        }
+
+        ImGui.Separator();
+        if (mouseOverSuppressor != null)
+        {
+            ImGui.Text("MouseOverSuppressor (v0.6.6+):");
+            ImGui.Text($"  total calls:   {mouseOverSuppressor.CallCount}");
+            ImGui.Text($"  suppressed:    {mouseOverSuppressor.SuppressedCount}");
+            ImGui.Text($"  pass-through:  {mouseOverSuppressor.PassThroughCount}");
+            ImGui.TextDisabled("  If 'total calls' is 0 while clicking, the hook");
+            ImGui.TextDisabled("  isn't on the click-path function.");
+        }
+        else
+        {
+            ImGui.Text("MouseOverSuppressor: (null)");
         }
 
         ImGui.Separator();

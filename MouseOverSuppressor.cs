@@ -38,6 +38,13 @@ internal sealed unsafe class MouseOverSuppressor : IDisposable
     private readonly Hook<GetMouseOverObjectDelegate>? hook;
     private readonly Func<bool> shouldSuppress;
 
+    // Debug counters surfaced via /actioncam debug. Help diagnose "the hook
+    // installed but does it actually fire on click?" without spamming the
+    // log every per-frame hover call.
+    public long CallCount        { get; private set; }
+    public long SuppressedCount  { get; private set; }
+    public long PassThroughCount { get; private set; }
+
     public MouseOverSuppressor(Func<bool> shouldSuppress)
     {
         this.shouldSuppress = shouldSuppress;
@@ -57,6 +64,7 @@ internal sealed unsafe class MouseOverSuppressor : IDisposable
 
             hook = Plugin.GameInterop.HookFromAddress<GetMouseOverObjectDelegate>(addr, Detour);
             hook.Enable();
+            Plugin.Log.Information($"MouseOverSuppressor: hook installed at 0x{addr:X}.");
         }
         catch (Exception ex)
         {
@@ -66,7 +74,13 @@ internal sealed unsafe class MouseOverSuppressor : IDisposable
 
     private GameObject* Detour(TargetSystem* ts, int x, int y, nint objectsArray, nint camera)
     {
-        if (shouldSuppress()) return null;
+        CallCount++;
+        if (shouldSuppress())
+        {
+            SuppressedCount++;
+            return null;
+        }
+        PassThroughCount++;
         return hook!.Original(ts, x, y, objectsArray, camera);
     }
 

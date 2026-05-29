@@ -109,6 +109,7 @@ public sealed class Plugin : IDalamudPlugin
 
         debugOverlay = new DebugOverlay(
             cursorUpdateHook,
+            mouseOverSuppressor,
             () => userWantsActive,
             () => cameraController.IsActive,
             IsMenuOpen,
