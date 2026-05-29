@@ -108,7 +108,7 @@ public sealed unsafe class TargetSelector
         // directly (same pattern as the MouseOverTarget write above)
         // bypasses the function and keeps the pointer in sync without
         // queueing any UI animation.
-        if (config.WriteSoftTarget) DirectSetSoftTarget(ts, cachedBest);
+        if (config.WriteSoftTarget) DirectSetSoftTarget(cachedBest);
         if (config.WriteHardTarget) Plugin.TargetManager.Target = cachedBest;
     }
 
