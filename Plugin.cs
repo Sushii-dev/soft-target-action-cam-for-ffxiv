@@ -44,6 +44,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CursorShowHook cursorShowHook;
     private readonly CursorUpdateHook cursorUpdateHook;
     private readonly DebugOverlay debugOverlay;
+    private readonly MouseBindController mouseBindController;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -98,12 +99,22 @@ public sealed class Plugin : IDalamudPlugin
             IsMenuOpen,
             CameraController.IsRmbHeld);
 
+        // BETA: mouse-button → hotbar fire. Hard-gated to cam-active +
+        // cursor-hidden so vanilla mouse semantics stay untouched outside
+        // the action mode. Toggle defaults to OFF; existing users see
+        // zero behaviour change unless they opt in via the config UI.
+        mouseBindController = new MouseBindController(
+            Configuration,
+            () => cameraController.IsActive,
+            CameraController.IsGameCursorVisible,
+            IsMenuOpen);
+
         ConfigWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(ConfigWindow);
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Toggle action camera mode. Args: on | off | config | cleartarget | debug | dumpaddon"
+            HelpMessage = "Toggle action camera mode. Args: on | off | config | cleartarget | debug | dumpaddon | testfire <bar> <slot>"
         });
 
         PluginInterface.UiBuilder.Draw += DrawUI;
@@ -165,6 +176,11 @@ public sealed class Plugin : IDalamudPlugin
         cameraController.Update();
         // RotationDriver runs after camera so it reads the freshly-updated yaw.
         rotationDriver.Update();
+        // Mouse-bind controller is intentionally last in the tick — it
+        // depends on the camera's IsActive state having been reconciled
+        // for this frame, so the gate stack sees the same view of "are we
+        // in cursor-locked mode" that the rest of the systems do.
+        mouseBindController.Update();
     }
 
     /// <summary>
@@ -417,7 +433,13 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnCommand(string command, string args)
     {
-        switch (args.Trim().ToLowerInvariant())
+        // Tokenise so multi-word subcommands like "testfire 0 5" can be
+        // dispatched. Subcommand match is on the first token only;
+        // remaining tokens are forwarded to the per-subcommand handler.
+        var parts = args.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var sub = parts.Length > 0 ? parts[0].ToLowerInvariant() : string.Empty;
+
+        switch (sub)
         {
             case "on":
                 userWantsActive = true;
@@ -443,11 +465,42 @@ public sealed class Plugin : IDalamudPlugin
                 // callback shape a misbehaving dialog expects. See AddonDumper.
                 AddonDumper.Dump();
                 break;
+            case "testfire":
+                // Diagnostic: fire a hotbar slot directly, bypassing the
+                // mouse-bind controller's gates. Validates that
+                // RaptureHotbarModule.ExecuteSlotById works from the
+                // framework thread before the user wires up bindings.
+                HandleTestFire(parts);
+                break;
             default:
                 userWantsActive = !userWantsActive;
                 ChatGui.Print(userWantsActive ? "[ActionCamera] Activated." : "[ActionCamera] Deactivated.");
                 break;
         }
+    }
+
+    /// <summary>
+    /// Diagnostic command implementation: <c>/actioncam testfire &lt;bar&gt; &lt;slot&gt;</c>.
+    /// Bar id is 0..17 (0..9 standard hotbars, 10..17 cross). Slot id is 0..15.
+    /// The visible "Hotbar 1" in-game corresponds to bar id 0.
+    /// </summary>
+    private void HandleTestFire(string[] parts)
+    {
+        if (parts.Length < 3)
+        {
+            ChatGui.Print("[ActionCamera] Usage: /actioncam testfire <bar 0-17> <slot 0-15>");
+            return;
+        }
+
+        if (!uint.TryParse(parts[1], out var bar) || !uint.TryParse(parts[2], out var slot))
+        {
+            ChatGui.Print("[ActionCamera] testfire: bar and slot must be non-negative integers.");
+            return;
+        }
+
+        HotbarFirer.TryGetSlotPreview(bar, slot, out var label, out _);
+        var fired = HotbarFirer.Fire(bar, slot);
+        ChatGui.Print($"[ActionCamera] testfire bar={bar} slot={slot} -> {label}: {(fired ? "fired" : "skipped")}");
     }
 
     private void DrawUI()

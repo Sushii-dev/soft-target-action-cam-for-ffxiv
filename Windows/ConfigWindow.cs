@@ -17,11 +17,18 @@ public sealed class ConfigWindow : Window, IDisposable
     private bool listeningForHardKey;
     private bool listeningForInteractKey;
 
+    // Which mouse-bind row (if any) currently has its button picker open.
+    // Tracked by reference so add/remove of OTHER rows in MouseBinds
+    // doesn't disturb this one. Cleared if the bind itself is removed.
+    private MouseBind? listeningMouseBind;
+
     // Shared arming flag: while a picker is listening, we wait for all inputs
     // to be released before capturing the next press. Stops the LMB click
     // that opened the picker (and any held modifier) from being captured as
     // the binding. Only one picker can be listening at a time.
     private bool pickerArmed;
+
+    private static readonly string[] ModifierLabels = { "None", "Shift", "Ctrl", "Alt" };
 
     // Cached once: we scan this on every picker frame, including a "is any
     // input held" probe for arming.
@@ -55,6 +62,8 @@ public sealed class ConfigWindow : Window, IDisposable
         DrawReticleSection();
         ImGui.Separator();
         DrawCameraLimitsSection();
+        ImGui.Separator();
+        DrawMouseBindsSection();
     }
 
     // ── Activation ───────────────────────────────────────────────────────────
@@ -580,6 +589,171 @@ public sealed class ConfigWindow : Window, IDisposable
         }
 
         ImGui.EndDisabled();
+    }
+
+    // ── Mouse binds (BETA, v0.6.0) ──────────────────────────────────────────
+
+    private void DrawMouseBindsSection()
+    {
+        ImGui.TextColored(new Vector4(1f, 0.5f, 0.2f, 1f), "Mouse Binds (BETA)");
+        ImGui.TextDisabled("  Fire hotbar slots via LMB / RMB / MMB / XBUTTON1 / XBUTTON2 — with");
+        ImGui.TextDisabled("  optional Shift / Ctrl / Alt modifier — while the camera is active");
+        ImGui.TextDisabled("  AND the cursor is hidden. Does NOT touch in-game keybinds; binds");
+        ImGui.TextDisabled("  resolve a live hotbar slot, so they follow job changes automatically.");
+        ImGui.TextDisabled("  Use /actioncam testfire <bar> <slot> to verify a slot ingame.");
+        ImGui.Spacing();
+
+        var enabled = Config.BetaMouseBindsEnabled;
+        if (ImGui.Checkbox("Enable mouse binds (BETA)", ref enabled))
+        {
+            Config.BetaMouseBindsEnabled = enabled;
+            Config.Save();
+        }
+
+        ImGui.BeginDisabled(!Config.BetaMouseBindsEnabled);
+
+        ImGui.Spacing();
+        ImGui.TextDisabled("  Hotbar id range 0-17 (0-9 standard, 10-17 cross). Slot 0-15.");
+        ImGui.TextDisabled("  In-game 'Hotbar 1' = bar 0, slot 1 = slot 0.");
+        ImGui.Spacing();
+
+        MouseBind? toRemove = null;
+        var rowIndex = 0;
+        foreach (var bind in Config.MouseBinds)
+        {
+            ImGui.PushID(rowIndex);
+            if (DrawMouseBindRow(bind))
+                toRemove = bind;
+            ImGui.PopID();
+            rowIndex++;
+        }
+
+        if (toRemove != null)
+        {
+            if (ReferenceEquals(listeningMouseBind, toRemove))
+            {
+                listeningMouseBind = null;
+                pickerArmed = false;
+            }
+            Config.MouseBinds.Remove(toRemove);
+            Config.Save();
+        }
+
+        if (ImGui.Button("Add bind"))
+        {
+            Config.MouseBinds.Add(new MouseBind());
+            Config.Save();
+        }
+
+        ImGui.EndDisabled();
+    }
+
+    /// <summary>
+    /// Renders one row of the mouse-bind list. Returns true if the user
+    /// pressed the row's remove button this frame — the caller is
+    /// responsible for actually removing the bind from the list after
+    /// iteration finishes (so we don't mutate the collection during
+    /// enumeration).
+    /// </summary>
+    private bool DrawMouseBindRow(MouseBind bind)
+    {
+        DrawMouseButtonPicker(bind);
+
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(70);
+        var modIdx = (int)bind.Modifier;
+        if (ImGui.Combo("##mod", ref modIdx, ModifierLabels, ModifierLabels.Length))
+        {
+            bind.Modifier = (MouseBindModifier)modIdx;
+            Config.Save();
+        }
+
+        ImGui.SameLine();
+        ImGui.Text("Bar");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(50);
+        var bar = (int)bind.HotbarId;
+        if (ImGui.InputInt("##bar", ref bar, 0))
+        {
+            if (bar < 0) bar = 0;
+            if (bar > (int)HotbarFirer.MaxHotbarId) bar = (int)HotbarFirer.MaxHotbarId;
+            bind.HotbarId = (uint)bar;
+            Config.Save();
+        }
+
+        ImGui.SameLine();
+        ImGui.Text("Slot");
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(50);
+        var slot = (int)bind.SlotId;
+        if (ImGui.InputInt("##slot", ref slot, 0))
+        {
+            if (slot < 0) slot = 0;
+            if (slot > (int)HotbarFirer.MaxSlotId) slot = (int)HotbarFirer.MaxSlotId;
+            bind.SlotId = (uint)slot;
+            Config.Save();
+        }
+
+        ImGui.SameLine();
+        var remove = ImGui.SmallButton("Remove##rm");
+
+        if (HotbarFirer.TryGetSlotPreview(bind.HotbarId, bind.SlotId, out var preview, out _))
+            ImGui.TextDisabled($"     -> {preview}");
+        else
+            ImGui.TextDisabled("     -> (unavailable - log in to see slot contents)");
+
+        ImGui.Spacing();
+        return remove;
+    }
+
+    /// <summary>
+    /// Mouse-only variant of the key picker. Captures only LBUTTON /
+    /// RBUTTON / MBUTTON / XBUTTON1 / XBUTTON2 — keyboard keys are
+    /// rejected. Listening state is keyed to the bind reference, so
+    /// only the row whose button is being picked shows the prompt.
+    /// </summary>
+    private void DrawMouseButtonPicker(MouseBind bind)
+    {
+        var listening = ReferenceEquals(listeningMouseBind, bind);
+        var label = bind.Button == VirtualKey.NO_KEY ? "(none)" : bind.Button.ToString();
+
+        if (listening)
+        {
+            ImGui.Button("Click any mouse btn...##mbtn", new Vector2(180, 0));
+
+            if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+            {
+                listeningMouseBind = null;
+                pickerArmed = false;
+                return;
+            }
+
+            if (!pickerArmed)
+            {
+                if (!AnyInputDown()) pickerArmed = true;
+                return;
+            }
+
+            foreach (var k in AllVirtualKeys)
+            {
+                if (!InputBinding.IsMouseButton(k)) continue;
+                if (!InputBinding.IsDownRaw(k)) continue;
+
+                bind.Button = k;
+                Config.Save();
+                listeningMouseBind = null;
+                pickerArmed = false;
+                return;
+            }
+        }
+        else
+        {
+            if (ImGui.Button(label + "##mbtn", new Vector2(180, 0)))
+            {
+                listeningMouseBind = bind;
+                pickerArmed = false;
+            }
+        }
     }
 
     // ── Camera limits ────────────────────────────────────────────────────────

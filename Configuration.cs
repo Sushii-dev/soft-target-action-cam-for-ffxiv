@@ -1,9 +1,39 @@
 using Dalamud.Configuration;
 using Dalamud.Game.ClientState.Keys;
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace ActionCamera;
+
+/// <summary>
+/// Single-modifier qualifier for a mouse-button bind. Combo modifiers
+/// (Ctrl+Shift, etc.) are intentionally out of scope for v0.6.0 — the
+/// 3-row hotbar share pattern that motivated this feature uses one
+/// modifier per row.
+/// </summary>
+public enum MouseBindModifier
+{
+    None  = 0,
+    Shift = 1,
+    Ctrl  = 2,
+    Alt   = 3,
+}
+
+/// <summary>
+/// One row in the BETA mouse-bind list. The button + modifier pair is
+/// the trigger; the hotbar id + slot id is the target. ExecuteSlotById
+/// resolves the slot live each fire, so job changes / hotbar share
+/// rearrangement are followed automatically.
+/// </summary>
+[Serializable]
+public class MouseBind
+{
+    public VirtualKey Button { get; set; } = VirtualKey.NO_KEY;
+    public MouseBindModifier Modifier { get; set; } = MouseBindModifier.None;
+    public uint HotbarId { get; set; } = 0;
+    public uint SlotId { get; set; } = 0;
+}
 
 [Serializable]
 public class Configuration : IPluginConfiguration
@@ -11,6 +41,8 @@ public class Configuration : IPluginConfiguration
     // Bumped on breaking changes that need migration. See <c>MigrateIfNeeded</c>.
     //   v1 → v2: shipped looping sound id 21 as success-sound default. Migration
     //            resets users whose saved id is still the looping value.
+    //   v2 → v3: introduces BetaMouseBindsEnabled + MouseBinds list. No migration
+    //            body — new fields default safely (off + empty list).
     public int Version { get; set; } = 1;
 
     // --- Activation ---
@@ -209,6 +241,26 @@ public class Configuration : IPluginConfiguration
     public float MinVRotationOverride { get; set; } = -1.45f;   // ~-83°
     public float MaxVRotationOverride { get; set; } = 0.65f;    //  ~37°
 
+    // --- Mouse-bind hotbar fire (BETA, v0.6.0) ---
+    //
+    // Lets the user fire hotbar slots via LMB / RMB / MMB / XBUTTON1 / XBUTTON2
+    // — with optional Shift / Ctrl / Alt modifier — while the action camera is
+    // active and the cursor is hidden. The game's native keybind UI does not
+    // allow binding mouse buttons to actions, but ExecuteSlotById gives us a
+    // direct fire path that dispatches Macro / Item / GeneralAction / etc.
+    // correctly and lets ReAction / MOAction / Redirect layer on top.
+    //
+    // The feature is gated behind a beta toggle (default OFF) so existing
+    // users see zero change unless they opt in. All fire decisions are
+    // additionally hard-gated to: cam active + cursor hidden + game focused
+    // + no menu open + ImGui not capturing the mouse — meaning vanilla
+    // mouse semantics (UI clicks, world raycast at cursor) are physically
+    // unreachable, so we don't need to swallow any native messages.
+
+    public bool BetaMouseBindsEnabled { get; set; } = false;
+
+    public List<MouseBind> MouseBinds { get; set; } = new();
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
     /// <summary>
@@ -229,6 +281,15 @@ public class Configuration : IPluginConfiguration
             if (InteractSuccessSoundId == 21)
                 InteractSuccessSoundId = 23;
             Version = 2;
+            dirty = true;
+        }
+
+        if (Version < 3)
+        {
+            // v0.6.0 introduced BetaMouseBindsEnabled + MouseBinds. No data
+            // repair needed — new fields default safely. Bump for bookkeeping
+            // so future v3→v4 migrations can target the right starting state.
+            Version = 3;
             dirty = true;
         }
 
