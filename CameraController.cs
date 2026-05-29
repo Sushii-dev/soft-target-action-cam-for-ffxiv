@@ -44,7 +44,12 @@ public sealed unsafe class CameraController : IDisposable
         // can be bound to camera-rotate in FFXIV's mouse settings). When no
         // mouse-camera button is held but our cam is active, we own the
         // input — return None to suppress the game's native camera control.
-        if (isActive && !IsMouseCameraHeld()) return CameraControlType.None;
+        //
+        // With BETA mouse-binds enabled, a held button that has a configured
+        // bind is "ours" (fire-mode), not vanilla camera input — keep
+        // suppressing the game's camera control in that case so the held
+        // click doesn't pivot the camera or pause our rotation pipeline.
+        if (isActive && !ShouldYieldToVanillaMouseCamera()) return CameraControlType.None;
         return cameraControlHook!.Original();
     }
 
@@ -223,6 +228,38 @@ public sealed unsafe class CameraController : IDisposable
     /// </summary>
     public static bool IsMouseCameraHeld() => IsRmbHeld() || IsLmbHeld();
 
+    /// <summary>
+    /// Like <see cref="IsMouseCameraHeld"/> but takes the BETA mouse-bind
+    /// configuration into account: a held button that has a configured
+    /// bind is owned by the fire pipeline, not vanilla camera input —
+    /// returning false for that case keeps the plugin's cursor-warp +
+    /// delta-based rotation running so the click doesn't introduce a
+    /// camera hitch.
+    ///
+    /// When the beta toggle is off, behaviour is identical to the
+    /// original <c>IsMouseCameraHeld</c> check — no regression for
+    /// users who haven't opted in.
+    /// </summary>
+    private bool ShouldYieldToVanillaMouseCamera()
+    {
+        if (!config.BetaMouseBindsEnabled)
+            return IsMouseCameraHeld();
+
+        var rmbYields = IsRmbHeld() && !HasBindForButton(VirtualKey.RBUTTON);
+        var lmbYields = IsLmbHeld() && !HasBindForButton(VirtualKey.LBUTTON);
+        return rmbYields || lmbYields;
+    }
+
+    private bool HasBindForButton(VirtualKey button)
+    {
+        foreach (var bind in config.MouseBinds)
+        {
+            if (bind == null) continue;
+            if (bind.Button == button) return true;
+        }
+        return false;
+    }
+
     // ── Per-frame update ─────────────────────────────────────────────────────
 
     public void Update()
@@ -230,18 +267,24 @@ public sealed unsafe class CameraController : IDisposable
         if (!isActive) return;
         if (!Plugin.ClientState.IsLoggedIn) { Deactivate(); return; }
 
-        // Mouse-button-held (RMB or LMB): the game owns cursor lock and
-        // camera rotation. Skip our cursor-warp + delta-based rotation
-        // entirely — they would fight the game's lock and produce a
-        // constant non-zero delta from centre to the click point,
-        // spinning the camera. Cone targeting and character facing still
-        // run, using the game's HRotation which the game is updating
-        // from the mouse input.
+        // Mouse-button-held (RMB or LMB) WITHOUT a configured BETA bind:
+        // the game owns cursor lock and camera rotation. Skip our
+        // cursor-warp + delta-based rotation entirely — they would fight
+        // the game's lock and produce a constant non-zero delta from
+        // centre to the click point, spinning the camera. Cone targeting
+        // and character facing still run, using the game's HRotation
+        // which the game is updating from the mouse input.
         //
         // Re-arm both spike-guard stages so when the mouse button
         // releases the next motion absorbs the warp staleness that would
         // otherwise hit our reawakening cursor logic.
-        if (IsMouseCameraHeld())
+        //
+        // When BETA mouse-binds is on and the held button has a bind,
+        // ShouldYieldToVanillaMouseCamera() returns false — the click is
+        // a hotbar fire, not a camera input, so the rotation pipeline
+        // keeps running through the click and the user doesn't perceive
+        // a per-click camera hitch.
+        if (ShouldYieldToVanillaMouseCamera())
         {
             var hrot = GetCameraHRotation();
             if (config.AutoTarget) targetSelector.Update(hrot);
