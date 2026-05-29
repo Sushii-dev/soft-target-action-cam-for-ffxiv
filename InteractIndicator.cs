@@ -148,26 +148,58 @@ public sealed class InteractIndicator
         return (a << 24) | (b << 16) | (g << 8) | r;
     }
 
-    private static void EmissiveLine(ImDrawListPtr dl, Vector2 p1, Vector2 p2, uint color, float thickness, bool emissive, float pulse)
+    /// <summary>
+    /// Emissive line stroke with ROUNDED ends. AddLine draws a flat-capped
+    /// rectangle, so a wide glow pass has blunt rectangular ends and, where
+    /// two strokes meet (bracket corners), a gap. We round both by stamping
+    /// filled discs at each endpoint at every layer's radius — that softens
+    /// the bloom ends and fills the corner joint (both strokes stamp the
+    /// shared corner). Three glow layers for a stronger emissive falloff,
+    /// then a dark contrast contour, a brightened core, and a hot near-white
+    /// inner line for the "glowing filament" look.
+    /// </summary>
+    private static void EmissiveStroke(ImDrawListPtr dl, Vector2 p1, Vector2 p2, uint color, float thickness, bool emissive, float pulse)
     {
         if (emissive)
         {
-            dl.AddLine(p1, p2, WithAlpha(color, 0.18f * pulse), thickness + 5f);
-            dl.AddLine(p1, p2, WithAlpha(color, 0.32f * pulse), thickness + 2.5f);
+            GlowSeg(dl, p1, p2, WithAlpha(color, 0.10f * pulse), thickness + 8f);
+            GlowSeg(dl, p1, p2, WithAlpha(color, 0.18f * pulse), thickness + 5f);
+            GlowSeg(dl, p1, p2, WithAlpha(color, 0.30f * pulse), thickness + 2.5f);
         }
-        dl.AddLine(p1, p2, 0xC0000000u, thickness + 1.2f);            // dark contrast contour
-        dl.AddLine(p1, p2, Brighten(color, 0.35f), thickness);       // bright core
+
+        // Dark contrast contour (rounded), then bright core (rounded), then
+        // a hot inner filament.
+        GlowSeg(dl, p1, p2, 0xB0000000u, thickness + 1.4f);
+
+        var core = Brighten(color, 0.45f);
+        GlowSeg(dl, p1, p2, core, thickness);
+
+        var hot = Brighten(color, 0.85f);
+        dl.AddLine(p1, p2, hot, MathF.Max(1f, thickness - 1.4f));
+    }
+
+    /// <summary>One rounded-cap segment: the line plus a filled disc at each
+    /// endpoint sized to the stroke half-width, so ends are round and
+    /// adjoining segments merge with no gap.</summary>
+    private static void GlowSeg(ImDrawListPtr dl, Vector2 p1, Vector2 p2, uint col, float thickness)
+    {
+        dl.AddLine(p1, p2, col, thickness);
+        var r = thickness * 0.5f;
+        dl.AddCircleFilled(p1, r, col, 16);
+        dl.AddCircleFilled(p2, r, col, 16);
     }
 
     private static void EmissiveEllipse(ImDrawListPtr dl, Vector2 c, float rx, float ry, uint color, float thickness, int seg, bool emissive, float pulse)
     {
         if (emissive)
         {
+            DrawEllipse(dl, c, rx, ry, WithAlpha(color, 0.10f * pulse), thickness + 8f,   seg);
             DrawEllipse(dl, c, rx, ry, WithAlpha(color, 0.18f * pulse), thickness + 5f,   seg);
-            DrawEllipse(dl, c, rx, ry, WithAlpha(color, 0.32f * pulse), thickness + 2.5f, seg);
+            DrawEllipse(dl, c, rx, ry, WithAlpha(color, 0.30f * pulse), thickness + 2.5f, seg);
         }
-        DrawEllipse(dl, c, rx, ry, 0xC0000000u,              thickness + 1.2f, seg);
-        DrawEllipse(dl, c, rx, ry, Brighten(color, 0.35f),   thickness,        seg);
+        DrawEllipse(dl, c, rx, ry, 0xB0000000u,              thickness + 1.4f, seg);
+        DrawEllipse(dl, c, rx, ry, Brighten(color, 0.45f),   thickness,        seg);
+        DrawEllipse(dl, c, rx, ry, Brighten(color, 0.85f),   MathF.Max(1f, thickness - 1.4f), seg);
     }
 
     private static bool PassesGameStateGates()
@@ -224,11 +256,13 @@ public sealed class InteractIndicator
         const float radius = 5f;
         if (emissive)
         {
-            dl.AddCircleFilled(screen, radius + 6f,   WithAlpha(color, 0.16f * pulse));
-            dl.AddCircleFilled(screen, radius + 3f,   WithAlpha(color, 0.30f * pulse));
+            dl.AddCircleFilled(screen, radius + 10f, WithAlpha(color, 0.10f * pulse));
+            dl.AddCircleFilled(screen, radius + 6f,  WithAlpha(color, 0.18f * pulse));
+            dl.AddCircleFilled(screen, radius + 3f,  WithAlpha(color, 0.30f * pulse));
         }
-        dl.AddCircleFilled(screen, radius + 1.3f, 0xC0000000u);          // dark contrast ring
-        dl.AddCircleFilled(screen, radius,        Brighten(color, 0.4f)); // bright core
+        dl.AddCircleFilled(screen, radius + 1.4f, 0xB0000000u);           // dark contrast ring
+        dl.AddCircleFilled(screen, radius,        Brighten(color, 0.45f)); // bright core
+        dl.AddCircleFilled(screen, radius - 1.6f, Brighten(color, 0.85f)); // hot center
     }
 
     // ── Style: head chevron ─────────────────────────────────────────────────
@@ -245,8 +279,8 @@ public sealed class InteractIndicator
         var leftT  = screen + new Vector2(-w, -h * 2.2f);
         var rightT = screen + new Vector2( w, -h * 2.2f);
 
-        EmissiveLine(dl, leftT,  top, color, thickness, emissive, pulse);
-        EmissiveLine(dl, rightT, top, color, thickness, emissive, pulse);
+        EmissiveStroke(dl, leftT,  top, color, thickness, emissive, pulse);
+        EmissiveStroke(dl, rightT, top, color, thickness, emissive, pulse);
     }
 
     // ── Style: screen brackets (all 3 sizes) ────────────────────────────────
@@ -319,8 +353,8 @@ public sealed class InteractIndicator
     /// </summary>
     private static void DrawCornerTick(ImDrawListPtr dl, Vector2 corner, float dx, float dy, uint color, float thickness, bool emissive, float pulse)
     {
-        EmissiveLine(dl, corner, corner + new Vector2(dx, 0f), color, thickness, emissive, pulse);
-        EmissiveLine(dl, corner, corner + new Vector2(0f, dy), color, thickness, emissive, pulse);
+        EmissiveStroke(dl, corner, corner + new Vector2(dx, 0f), color, thickness, emissive, pulse);
+        EmissiveStroke(dl, corner, corner + new Vector2(0f, dy), color, thickness, emissive, pulse);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
