@@ -549,7 +549,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             var pick = targetSelector.CachedBest;
             if (TargetManager.SoftTarget?.GameObjectId != pick.GameObjectId)
-                TargetManager.SoftTarget = pick;
+                TargetSelector.DirectSetSoftTarget(pick);
         }
 
         WindowSystem.Draw();

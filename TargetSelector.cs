@@ -98,8 +98,41 @@ public sealed unsafe class TargetSelector
             ResetHighlight(lastHighlightedId);
             lastHighlightedId = 0;
         }
-        if (config.WriteSoftTarget) Plugin.TargetManager.SoftTarget = cachedBest;
-        if (config.WriteHardTarget) Plugin.TargetManager.Target     = cachedBest;
+        // SoftTarget direct field write (v0.6.5): Dalamud's
+        // ITargetManager.SoftTarget setter calls into the game's
+        // SetSoftTarget function which fires the "target acquired"
+        // animation + SFX on value change. The game's own input pipeline
+        // also goes through that function when clearing SoftTarget on
+        // LMB / RMB release — by the time our next-frame write happens,
+        // the null→entity transition triggers the cue. Writing the field
+        // directly (same pattern as the MouseOverTarget write above)
+        // bypasses the function and keeps the pointer in sync without
+        // queueing any UI animation.
+        if (config.WriteSoftTarget) DirectSetSoftTarget(ts, cachedBest);
+        if (config.WriteHardTarget) Plugin.TargetManager.Target = cachedBest;
+    }
+
+    /// <summary>
+    /// Direct-field-write helper for <c>TargetSystem.SoftTarget</c>. Used in
+    /// place of <see cref="Plugin.TargetManager"/>'s SoftTarget setter so the
+    /// game's SetSoftTarget function (which fires the "target acquired" UI
+    /// animation + SFX) is bypassed. Shared by every plugin code path that
+    /// keeps SoftTarget pinned to our cone pick — see <c>MouseBindController</c>
+    /// post-fire restore and <c>Plugin.DrawUI</c> render-time restore.
+    /// </summary>
+    public static unsafe void DirectSetSoftTarget(IGameObject? obj)
+    {
+        var ts = FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance();
+        if (ts == null) return;
+        DirectSetSoftTarget(ts, obj);
+    }
+
+    private static unsafe void DirectSetSoftTarget(
+        FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem* ts, IGameObject? obj)
+    {
+        ts->SoftTarget = obj != null
+            ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address
+            : null;
     }
 
     private static IGameObject? FindBestTarget(float cameraYaw, Configuration config)
@@ -189,7 +222,7 @@ public sealed unsafe class TargetSelector
             && Plugin.TargetManager.SoftTarget != null
             && Plugin.TargetManager.SoftTarget.GameObjectId == cachedBest.GameObjectId)
         {
-            Plugin.TargetManager.SoftTarget = null;
+            DirectSetSoftTarget(null);
         }
     }
 

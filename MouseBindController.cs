@@ -119,7 +119,7 @@ internal sealed class MouseBindController
             {
                 var postSoft = Plugin.TargetManager.SoftTarget;
                 if (postSoft?.GameObjectId != preSoft.GameObjectId)
-                    Plugin.TargetManager.SoftTarget = preSoft;
+                    TargetSelector.DirectSetSoftTarget(preSoft);
             }
         }
     }
