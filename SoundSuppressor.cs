@@ -32,6 +32,15 @@ internal sealed unsafe class SoundSuppressor : IDisposable
     private readonly Func<uint> getMutedId;
     private readonly Func<bool> shouldLog;
 
+    // Live diagnostics surfaced in DebugOverlay. CallCount confirms the
+    // hook is on a function the game actually calls (rises on any UI
+    // sound); LastId / LastIdInCam show the most-recent effect id so the
+    // soft-target-acquire id can be read off the overlay without xllog.
+    public long CallCount     { get; private set; }
+    public uint LastId        { get; private set; }
+    public uint LastIdInCam   { get; private set; }
+    public long SuppressedCount { get; private set; }
+
     public SoundSuppressor(Func<bool> isCamActive, Func<uint> getMutedId, Func<bool> shouldLog)
     {
         this.isCamActive = isCamActive;
@@ -56,17 +65,27 @@ internal sealed unsafe class SoundSuppressor : IDisposable
 
     private void Detour(uint effectId, nint a2, nint a3, byte a4)
     {
+        CallCount++;
+        LastId = effectId;
+
         if (isCamActive())
         {
-            // Discovery: log effect ids that fire right around a left-click
-            // so the user can identify the target-acquire sound. Gated on
-            // the debug overlay + a recent LMB so it isn't permanent spam.
-            if (shouldLog() && InputBinding.WasLmbDownWithin(150))
-                Plugin.Log.Information($"[Veiled] PlaySoundEffect id={effectId} (near LMB)");
+            LastIdInCam = effectId;
+
+            // Discovery: log every effect id while cam active + debug
+            // overlay on. Camera-pan soft-target switches have no LMB, so
+            // the previous LMB-window gate missed them — this catches any
+            // trigger. Cam mode has little ambient UI sound, so the
+            // acquire id stands out.
+            if (shouldLog())
+                Plugin.Log.Information($"[Veiled] PlaySoundEffect id={effectId}");
 
             var muted = getMutedId();
             if (muted != 0 && effectId == muted)
+            {
+                SuppressedCount++;
                 return; // drop only the configured id while cam active
+            }
         }
 
         hook!.Original(effectId, a2, a3, a4);

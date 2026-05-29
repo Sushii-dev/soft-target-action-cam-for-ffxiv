@@ -23,6 +23,7 @@ internal sealed unsafe class DebugOverlay
     private readonly MouseOverSuppressor? mouseOverSuppressor;
     private readonly SoftTargetSuppressor? softTargetSuppressor;
     private readonly InputStatusSuppressor? inputStatusSuppressor;
+    private readonly SoundSuppressor? soundSuppressor;
     private readonly Func<bool> isUserWantsActive;
     private readonly Func<bool> isCamActive;
     private readonly Func<bool> isMenuOpen;
@@ -48,6 +49,7 @@ internal sealed unsafe class DebugOverlay
         MouseOverSuppressor? mouseOverSuppressor,
         SoftTargetSuppressor? softTargetSuppressor,
         InputStatusSuppressor? inputStatusSuppressor,
+        SoundSuppressor? soundSuppressor,
         Func<bool> isUserWantsActive,
         Func<bool> isCamActive,
         Func<bool> isMenuOpen,
@@ -57,6 +59,7 @@ internal sealed unsafe class DebugOverlay
         this.mouseOverSuppressor = mouseOverSuppressor;
         this.softTargetSuppressor = softTargetSuppressor;
         this.inputStatusSuppressor = inputStatusSuppressor;
+        this.soundSuppressor = soundSuppressor;
         this.isUserWantsActive = isUserWantsActive;
         this.isCamActive = isCamActive;
         this.isMenuOpen = isMenuOpen;
@@ -149,6 +152,22 @@ internal sealed unsafe class DebugOverlay
         else
         {
             ImGui.Text("InputStatusSuppressor: (null)");
+        }
+
+        ImGui.Separator();
+        if (soundSuppressor != null)
+        {
+            ImGui.Text("SoundSuppressor (v0.6.18+):");
+            ImGui.Text($"  total calls:   {soundSuppressor.CallCount}");
+            ImGui.Text($"  last id:       {soundSuppressor.LastId}");
+            ImGui.Text($"  last id (cam): {soundSuppressor.LastIdInCam}");
+            ImGui.Text($"  suppressed:    {soundSuppressor.SuppressedCount}");
+            ImGui.TextDisabled("  'total calls' rising on any UI sound = hook alive.");
+            ImGui.TextDisabled("  Switch soft target in cam, read 'last id (cam)'.");
+        }
+        else
+        {
+            ImGui.Text("SoundSuppressor: (null)");
         }
 
         ImGui.Separator();

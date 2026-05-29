@@ -155,24 +155,27 @@ public sealed class Plugin : IDalamudPlugin
             () => userWantsActive && Configuration.WriteSoftTarget,
             () => targetSelector.CachedBestAddress);
 
+        // Mute the soft-target acquire sound while cam active. Created
+        // before debugOverlay so the overlay can show its live counters;
+        // the shouldLog lambda reads debugOverlay.Enabled at call-time
+        // (the field is assigned just below, before any hook fires).
+        // Muted id is 0 (off) until confirmed via the debug sound log;
+        // flip MutedSoftTargetSoundId once known.
+        soundSuppressor = new SoundSuppressor(
+            () => userWantsActive && Configuration.MuteSoftTargetSoundInCam,
+            () => Configuration.MutedSoftTargetSoundId,
+            () => debugOverlay != null && debugOverlay.Enabled);
+
         debugOverlay = new DebugOverlay(
             cursorUpdateHook,
             mouseOverSuppressor,
             softTargetSuppressor,
             inputStatusSuppressor,
+            soundSuppressor,
             () => userWantsActive,
             () => cameraController.IsActive,
             IsMenuOpen,
             CameraController.IsRmbHeld);
-
-        // Mute the soft-target acquire sound while cam active. Created
-        // after debugOverlay so its discovery log can be gated on the
-        // overlay being enabled. Muted id is 0 (off) until confirmed via
-        // the debug sound log; flip MutedSoftTargetSoundId once known.
-        soundSuppressor = new SoundSuppressor(
-            () => userWantsActive && Configuration.MuteSoftTargetSoundInCam,
-            () => Configuration.MutedSoftTargetSoundId,
-            () => debugOverlay.Enabled);
 
         // BETA: mouse-button → hotbar fire. Hard-gated to cam-active +
         // cursor-hidden so vanilla mouse semantics stay untouched outside
