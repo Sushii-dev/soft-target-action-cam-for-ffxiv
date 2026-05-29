@@ -192,10 +192,23 @@ public class Configuration : IPluginConfiguration
     // Indicator visual style — see InteractIndicator for definitions.
     public InteractIndicatorStyle InteractIndicatorStyle { get; set; } = InteractIndicatorStyle.GroundRing;
 
-    // Default chosen to match FFXIV's own "interactable" tint (soft warm gold
-    // at ~65% alpha) so the indicator reads as a native affordance rather
-    // than a plugin overlay.
-    public Vector4 InteractIndicatorColor { get; set; } = new Vector4(1f, 0.85f, 0.3f, 0.65f);
+    // Bright warm MSQ-quest-marker gold at full alpha (v0.6.29). The
+    // emissive glow + pulse below build on this base; a brighter, more
+    // saturated base reads as the game's own quest/MSQ affordance rather
+    // than a dim plugin overlay. (Old default was 0.85/0.3 @ 0.65 alpha —
+    // too dark per user feedback. Use the "Reset to MSQ gold" config
+    // button to adopt this on an existing profile.)
+    public Vector4 InteractIndicatorColor { get; set; } = new Vector4(1f, 0.80f, 0.30f, 1.0f);
+
+    // --- Interact indicator emissive look (v0.6.29) ---
+    //
+    // Emissive: layer soft wide glow strokes under a brightened core so
+    // the marker "glows" like an MSQ quest icon instead of a flat line.
+    // Pulse: gently breathe the glow/brightness over time (same cadence
+    // feel as the game's quest markers). Both default on; toggle off for
+    // a flat, static marker.
+    public bool IndicatorEmissive { get; set; } = true;
+    public bool IndicatorPulse { get; set; } = true;
 
     // --- Interact target geometry (v0.5.22.0) ---
     //

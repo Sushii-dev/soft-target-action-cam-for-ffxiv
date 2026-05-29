@@ -425,6 +425,28 @@ public sealed class ConfigWindow : Window, IDisposable
             Config.InteractIndicatorColor = color;
             Config.Save();
         }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("MSQ gold##indcol"))
+        {
+            Config.InteractIndicatorColor = new Vector4(1f, 0.80f, 0.30f, 1.0f);
+            Config.Save();
+        }
+
+        var emissive = Config.IndicatorEmissive;
+        if (ImGui.Checkbox("Emissive glow", ref emissive))
+        {
+            Config.IndicatorEmissive = emissive;
+            Config.Save();
+        }
+        ImGui.SameLine();
+        var pulse = Config.IndicatorPulse;
+        if (ImGui.Checkbox("Pulse", ref pulse))
+        {
+            Config.IndicatorPulse = pulse;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Emissive = soft glow under a bright core (MSQ-marker look).");
+        ImGui.TextDisabled("  Pulse = gentle breathing, like the game's quest markers.");
 
         ImGui.EndDisabled();
 

@@ -72,12 +72,6 @@ public enum InteractIndicatorStyle
 /// </summary>
 public sealed class InteractIndicator
 {
-    // Pure black with full alpha — the outline / halo color for every style.
-    // User-chosen color drives the foreground stroke; we always pair it with
-    // this fixed dark backing to keep the indicator readable against bright
-    // skies / snow / pale walls etc. that bleed into the user color.
-    private const uint OutlineColor = 0xFF000000u;
-
     private readonly Configuration config;
     private readonly Func<Dalamud.Game.ClientState.Objects.Types.IGameObject?> candidateFn;
 
@@ -97,23 +91,83 @@ public sealed class InteractIndicator
 
         var dl  = ImGui.GetForegroundDrawList();
         var col = ImGui.ColorConvertFloat4ToU32(config.InteractIndicatorColor);
+        var emissive = config.IndicatorEmissive;
+        var pulse = config.IndicatorPulse ? PulseFactor() : 1f;
 
         switch (config.InteractIndicatorStyle)
         {
-            case InteractIndicatorStyle.GroundRing:    DrawGroundRing(dl, target, col); break;
-            case InteractIndicatorStyle.HeadDot:       DrawHeadDot(dl, target, col); break;
-            case InteractIndicatorStyle.HeadChevron:   DrawHeadChevron(dl, target, col); break;
+            case InteractIndicatorStyle.GroundRing:    DrawGroundRing(dl, target, col, emissive, pulse); break;
+            case InteractIndicatorStyle.HeadDot:       DrawHeadDot(dl, target, col, emissive, pulse); break;
+            case InteractIndicatorStyle.HeadChevron:   DrawHeadChevron(dl, target, col, emissive, pulse); break;
 
             // The three bracket variants share a draw routine — the sizing
             // knobs (tick length + frame-tightness factor) are the only
             // difference. See DrawScreenBrackets / BracketGeometry.
             case InteractIndicatorStyle.ScreenBrackets:
-                DrawScreenBrackets(dl, target, col, tickLen: 8f,  halfWidthFactor: 0.35f, heightFactor: 1.00f); break;
+                DrawScreenBrackets(dl, target, col, 8f,  0.35f, 1.00f, emissive, pulse); break;
             case InteractIndicatorStyle.ScreenBracketsLarge:
-                DrawScreenBrackets(dl, target, col, tickLen: 16f, halfWidthFactor: 0.35f, heightFactor: 1.00f); break;
+                DrawScreenBrackets(dl, target, col, 16f, 0.35f, 1.00f, emissive, pulse); break;
             case InteractIndicatorStyle.ScreenBracketsTight:
-                DrawScreenBrackets(dl, target, col, tickLen: 16f, halfWidthFactor: 0.22f, heightFactor: 0.75f); break;
+                DrawScreenBrackets(dl, target, col, 16f, 0.22f, 0.75f, emissive, pulse); break;
         }
+    }
+
+    // ── Emissive rendering helpers (v0.6.29) ────────────────────────────────
+    //
+    // Every style renders through these so the look is consistent: a couple
+    // of wide, low-alpha glow passes (the "emissive" bloom), then a thin dark
+    // contrast contour, then a brightened core stroke on top. The pulse
+    // factor scales the glow so the marker gently breathes like an MSQ quest
+    // icon. ImGui U32 colors are packed R(low)..A(high) — see WithAlpha/
+    // Brighten which respect that order.
+
+    /// <summary>Breathing factor in ~[0.70, 1.0] at a calm cadence.</summary>
+    private static float PulseFactor()
+    {
+        var t = (float)ImGui.GetTime();
+        return 0.85f + 0.15f * MathF.Sin(t * 3.0f);
+    }
+
+    private static uint WithAlpha(uint col, float mul)
+    {
+        var a = (uint)Math.Clamp(((col >> 24) & 0xFFu) * mul, 0f, 255f);
+        return (col & 0x00FFFFFFu) | (a << 24);
+    }
+
+    /// <summary>Lerp the RGB channels toward white by <paramref name="k"/>
+    /// (alpha preserved) — gives the core stroke its emissive "hot" look.</summary>
+    private static uint Brighten(uint col, float k)
+    {
+        uint a = (col >> 24) & 0xFFu;
+        uint b = (col >> 16) & 0xFFu;
+        uint g = (col >> 8)  & 0xFFu;
+        uint r =  col        & 0xFFu;
+        r = (uint)(r + (255 - r) * k);
+        g = (uint)(g + (255 - g) * k);
+        b = (uint)(b + (255 - b) * k);
+        return (a << 24) | (b << 16) | (g << 8) | r;
+    }
+
+    private static void EmissiveLine(ImDrawListPtr dl, Vector2 p1, Vector2 p2, uint color, float thickness, bool emissive, float pulse)
+    {
+        if (emissive)
+        {
+            dl.AddLine(p1, p2, WithAlpha(color, 0.18f * pulse), thickness + 5f);
+            dl.AddLine(p1, p2, WithAlpha(color, 0.32f * pulse), thickness + 2.5f);
+        }
+        dl.AddLine(p1, p2, 0xC0000000u, thickness + 1.2f);            // dark contrast contour
+        dl.AddLine(p1, p2, Brighten(color, 0.35f), thickness);       // bright core
+    }
+
+    private static void EmissiveEllipse(ImDrawListPtr dl, Vector2 c, float rx, float ry, uint color, float thickness, int seg, bool emissive, float pulse)
+    {
+        if (emissive)
+        {
+            DrawEllipse(dl, c, rx, ry, WithAlpha(color, 0.18f * pulse), thickness + 5f,   seg);
+            DrawEllipse(dl, c, rx, ry, WithAlpha(color, 0.32f * pulse), thickness + 2.5f, seg);
+        }
+        DrawEllipse(dl, c, rx, ry, 0xC0000000u,              thickness + 1.2f, seg);
+        DrawEllipse(dl, c, rx, ry, Brighten(color, 0.35f),   thickness,        seg);
     }
 
     private static bool PassesGameStateGates()
@@ -133,29 +187,19 @@ public sealed class InteractIndicator
 
     // ── Style: ground ring ──────────────────────────────────────────────────
 
-    private static void DrawGroundRing(ImDrawListPtr dl, Dalamud.Game.ClientState.Objects.Types.IGameObject t, uint color)
+    private static void DrawGroundRing(ImDrawListPtr dl, Dalamud.Game.ClientState.Objects.Types.IGameObject t, uint color, bool emissive, float pulse)
     {
         var feet = t.Position; // GameObject.Position is at the feet anchor
         if (!Plugin.GameGui.WorldToScreen(feet, out var screen)) return;
 
-        // Two faint concentric ovals to fake a perspective ring without
-        // requiring a real 3D projection. Wider horizontally than vertically
-        // sells the "lying flat on the ground" read.
+        // Perspective-faked ground oval (wider than tall). Emissive glow +
+        // bright core via the shared helper, plus a fainter inner ring.
         const float radiusX = 22f;
         const float radiusY = 8f;
-        const float thickness = 1.5f;
+        const float thickness = 2f;
 
-        // Outline pass first — same shape, slightly thicker, in black. Acts
-        // as a halo around the colored stroke so the ring reads against
-        // both light and dark ground textures. Same pattern for every style.
-        DrawEllipse(dl, screen, radiusX, radiusY, OutlineColor, thickness + 1.5f, segments: 36);
-        DrawEllipse(dl, screen, radiusX, radiusY, color,        thickness,       segments: 36);
-
-        // Inner faint ring at 60 % size for a subtle bullseye effect — keeps
-        // the affordance readable on busy ground textures.
-        var dim = (color & 0x00FFFFFFu) | ((uint)((color >> 24 & 0xFFu) * 0.55f) << 24);
-        DrawEllipse(dl, screen, radiusX * 0.6f, radiusY * 0.6f, OutlineColor, 2.0f, segments: 28);
-        DrawEllipse(dl, screen, radiusX * 0.6f, radiusY * 0.6f, dim,          1.0f, segments: 28);
+        EmissiveEllipse(dl, screen, radiusX, radiusY, color, thickness, 40, emissive, pulse);
+        EmissiveEllipse(dl, screen, radiusX * 0.6f, radiusY * 0.6f, WithAlpha(color, 0.6f), 1.2f, 28, emissive, pulse);
     }
 
     private static void DrawEllipse(ImDrawListPtr dl, Vector2 center, float rx, float ry, uint color, float thickness, int segments)
@@ -172,42 +216,37 @@ public sealed class InteractIndicator
 
     // ── Style: head dot ─────────────────────────────────────────────────────
 
-    private static void DrawHeadDot(ImDrawListPtr dl, Dalamud.Game.ClientState.Objects.Types.IGameObject t, uint color)
+    private static void DrawHeadDot(ImDrawListPtr dl, Dalamud.Game.ClientState.Objects.Types.IGameObject t, uint color, bool emissive, float pulse)
     {
         var headWorld = HeadAnchor(t);
         if (!Plugin.GameGui.WorldToScreen(headWorld, out var screen)) return;
 
-        // Black disk slightly larger than the colored disk — the black ring
-        // around the dot is what makes it pop against bright skyboxes and
-        // dark interiors equally. Previous implementation outlined with the
-        // user color at full alpha, which disappeared against same-hue
-        // backgrounds (eg gold dot on Limsa fountain rim).
-        const float radius = 4.5f;
-        dl.AddCircleFilled(screen, radius + 1.5f, OutlineColor);
-        dl.AddCircleFilled(screen, radius,        color);
+        const float radius = 5f;
+        if (emissive)
+        {
+            dl.AddCircleFilled(screen, radius + 6f,   WithAlpha(color, 0.16f * pulse));
+            dl.AddCircleFilled(screen, radius + 3f,   WithAlpha(color, 0.30f * pulse));
+        }
+        dl.AddCircleFilled(screen, radius + 1.3f, 0xC0000000u);          // dark contrast ring
+        dl.AddCircleFilled(screen, radius,        Brighten(color, 0.4f)); // bright core
     }
 
     // ── Style: head chevron ─────────────────────────────────────────────────
 
-    private static void DrawHeadChevron(ImDrawListPtr dl, Dalamud.Game.ClientState.Objects.Types.IGameObject t, uint color)
+    private static void DrawHeadChevron(ImDrawListPtr dl, Dalamud.Game.ClientState.Objects.Types.IGameObject t, uint color, bool emissive, float pulse)
     {
         var headWorld = HeadAnchor(t);
         if (!Plugin.GameGui.WorldToScreen(headWorld, out var screen)) return;
 
-        // Downward-pointing chevron — "this one". Sized small to stay
-        // subtle but big enough to read at a glance.
-        const float w = 8f;
-        const float h = 6f;
-        const float thickness = 2f;
+        const float w = 9f;
+        const float h = 7f;
+        const float thickness = 2.5f;
         var top    = screen + new Vector2(0f, -h);
         var leftT  = screen + new Vector2(-w, -h * 2.2f);
         var rightT = screen + new Vector2( w, -h * 2.2f);
 
-        // Halo pass — thicker black lines first, then colored on top.
-        dl.AddLine(leftT,  top, OutlineColor, thickness + 1.5f);
-        dl.AddLine(rightT, top, OutlineColor, thickness + 1.5f);
-        dl.AddLine(leftT,  top, color,        thickness);
-        dl.AddLine(rightT, top, color,        thickness);
+        EmissiveLine(dl, leftT,  top, color, thickness, emissive, pulse);
+        EmissiveLine(dl, rightT, top, color, thickness, emissive, pulse);
     }
 
     // ── Style: screen brackets (all 3 sizes) ────────────────────────────────
@@ -233,7 +272,9 @@ public sealed class InteractIndicator
         uint color,
         float tickLen,
         float halfWidthFactor,
-        float heightFactor)
+        float heightFactor,
+        bool emissive,
+        float pulse)
     {
         var headWorld = HeadAnchor(t);
         var feetWorld = t.Position;
@@ -261,12 +302,12 @@ public sealed class InteractIndicator
         var bl = new Vector2(cx - halfW, botY);
         var br = new Vector2(cx + halfW, botY);
 
-        const float thickness = 2f;
+        const float thickness = 2.5f;
 
-        DrawCornerTick(dl, tl, +tickLen, +tickLen, color, thickness);
-        DrawCornerTick(dl, tr, -tickLen, +tickLen, color, thickness);
-        DrawCornerTick(dl, bl, +tickLen, -tickLen, color, thickness);
-        DrawCornerTick(dl, br, -tickLen, -tickLen, color, thickness);
+        DrawCornerTick(dl, tl, +tickLen, +tickLen, color, thickness, emissive, pulse);
+        DrawCornerTick(dl, tr, -tickLen, +tickLen, color, thickness, emissive, pulse);
+        DrawCornerTick(dl, bl, +tickLen, -tickLen, color, thickness, emissive, pulse);
+        DrawCornerTick(dl, br, -tickLen, -tickLen, color, thickness, emissive, pulse);
     }
 
     /// <summary>
@@ -276,17 +317,10 @@ public sealed class InteractIndicator
     /// direction (positive = inward and down for top-left, etc.). Draws
     /// the black halo first, then the user-colored stroke on top.
     /// </summary>
-    private static void DrawCornerTick(ImDrawListPtr dl, Vector2 corner, float dx, float dy, uint color, float thickness)
+    private static void DrawCornerTick(ImDrawListPtr dl, Vector2 corner, float dx, float dy, uint color, float thickness, bool emissive, float pulse)
     {
-        var hx = new Vector2(dx, 0f);
-        var vy = new Vector2(0f, dy);
-
-        // Halo
-        dl.AddLine(corner, corner + hx, OutlineColor, thickness + 1.5f);
-        dl.AddLine(corner, corner + vy, OutlineColor, thickness + 1.5f);
-        // Foreground
-        dl.AddLine(corner, corner + hx, color, thickness);
-        dl.AddLine(corner, corner + vy, color, thickness);
+        EmissiveLine(dl, corner, corner + new Vector2(dx, 0f), color, thickness, emissive, pulse);
+        EmissiveLine(dl, corner, corner + new Vector2(0f, dy), color, thickness, emissive, pulse);
     }
 
     // ── Helpers ─────────────────────────────────────────────────────────────
