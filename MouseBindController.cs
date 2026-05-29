@@ -96,7 +96,31 @@ internal sealed class MouseBindController
             if (!down || prev) continue;
             if (!ModifierMatches(bind.Modifier, shiftDown, ctrlDown, altDown)) continue;
 
+            // Snapshot SoftTarget before fire. UseAction internally
+            // clears the game's SoftTarget pointer mid-frame ("consumed
+            // the target" bookkeeping); without a same-frame restore,
+            // TargetSelector's next-frame WriteSoftTarget produces a
+            // null→entity pointer transition, and the game's UI subsystem
+            // reads that as a fresh acquire — playing the ring re-attach
+            // animation + sound on every successful bound fire. Restoring
+            // the pointer here (after fire, before frame end) keeps the
+            // renderer's view of SoftTarget stable across the frame so
+            // the transition never reaches the UI layer.
+            //
+            // Only restore when the value the game left looks like a
+            // mid-fire clear / change (null or a different entity than
+            // what we held). If the user / another plugin set SoftTarget
+            // to something else after our pre-snapshot, leave it alone.
+            var preSoft = Plugin.TargetManager.SoftTarget;
+
             HotbarFirer.Fire(bind.HotbarId, bind.SlotId);
+
+            if (preSoft != null)
+            {
+                var postSoft = Plugin.TargetManager.SoftTarget;
+                if (postSoft?.GameObjectId != preSoft.GameObjectId)
+                    Plugin.TargetManager.SoftTarget = preSoft;
+            }
         }
     }
 
