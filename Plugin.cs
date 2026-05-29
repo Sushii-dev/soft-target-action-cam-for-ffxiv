@@ -525,6 +525,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             case InteractResult.InteractedWithTarget:
             case InteractResult.ExaminedPlayer:
+            case InteractResult.RodePillion:
                 Sfx.PlaySuccess(Configuration);
                 break;
             case InteractResult.NothingFound:

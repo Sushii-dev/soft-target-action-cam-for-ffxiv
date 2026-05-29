@@ -33,6 +33,10 @@ internal enum InteractResult
     /// silently for ~half a second while data loads.</summary>
     ExaminedPlayer,
 
+    /// <summary>(v0.6.32) Initiated Ride Pillion on a mounted party member.
+    /// Plays success sfx.</summary>
+    RodePillion,
+
     /// <summary>Key pressed, nothing was advanceable / interactable in range.
     /// Plays fail sfx.</summary>
     NothingFound,
@@ -100,6 +104,13 @@ internal sealed unsafe class InteractHandler
             if (hardTarget != null)
             {
                 var dalamudObj = Plugin.ObjectTable.CreateObjectReference((nint)hardTarget);
+
+                // Ride pillion takes priority over examine for a mounted
+                // party member — not weapon/examine gated (you pillion in
+                // any state). Base-game limits pillion to party members.
+                if (dalamudObj != null && IsPillionTarget(dalamudObj) && RidePillion(dalamudObj))
+                    return InteractResult.RodePillion;
+
                 if (dalamudObj is { ObjectKind: DalamudObjectKind.Pc }
                     && config.InteractExaminePlayers
                     && !IsLocalPlayerWeaponDrawn())
@@ -125,6 +136,13 @@ internal sealed unsafe class InteractHandler
 
         // No usable hard target — cone scan for NPC / EventObj / Aetheryte.
         if (TryInteractWithConeNpc()) return InteractResult.InteractedWithTarget;
+
+        // Cone scan for a mounted party member → ride pillion. Runs before
+        // the examine cone scan and independent of the examine/weapon gates
+        // (pillion is always allowed).
+        var pillionPc = FindCandidateInCone(IsPillionTarget);
+        if (pillionPc != null && RidePillion(pillionPc))
+            return InteractResult.RodePillion;
 
         // Last resort: PC cone scan. First press on a PC sets them as the
         // hard target so the next press can route into the Examine branch
@@ -158,6 +176,10 @@ internal sealed unsafe class InteractHandler
     {
         var npc = FindCandidateInCone(IsWorldInteractable);
         if (npc != null) return npc;
+
+        // Mounted party member → the marker shows where pillion will fire.
+        var pillion = FindCandidateInCone(IsPillionTarget);
+        if (pillion != null) return pillion;
 
         if (config.InteractExaminePlayers && !IsLocalPlayerWeaponDrawn())
             return FindCandidateInCone(IsExaminablePlayer);
@@ -373,5 +395,77 @@ internal sealed unsafe class InteractHandler
     {
         var lp = Plugin.ObjectTable.LocalPlayer;
         return lp != null && lp.StatusFlags.HasFlag(StatusFlags.WeaponOut);
+    }
+
+    // ── Ride pillion ────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// A valid ride-pillion target: a targetable PARTY MEMBER who is
+    /// currently mounted (base game limits pillion to party members). We
+    /// don't pre-check seat capacity — /ridepillion fails harmlessly on a
+    /// single-seat mount, and mounted allies you'd point at are normally on
+    /// shared mounts. Self is excluded (not in the cone / not targetable as
+    /// other).
+    /// </summary>
+    private static bool IsPillionTarget(IGameObject obj)
+    {
+        if (obj.ObjectKind != DalamudObjectKind.Pc) return false;
+        if (!obj.IsTargetable) return false;
+        if (!IsPartyMember(obj)) return false;
+        var chara = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)obj.Address;
+        return chara != null && chara->IsMounted();
+    }
+
+    private static bool IsPartyMember(IGameObject obj)
+    {
+        foreach (var m in Plugin.PartyList)
+            if (m.GameObject != null && m.GameObject.GameObjectId == obj.GameObjectId)
+                return true;
+        return false;
+    }
+
+    /// <summary>
+    /// Fire /ridepillion at the given party member. Prefers the party-slot
+    /// placeholder (&lt;1&gt;..&lt;8&gt;) so we don't disturb the player's
+    /// hard target; falls back to setting the target + &lt;t&gt;. Returns
+    /// false if the member couldn't be located in the party list.
+    /// </summary>
+    private static bool RidePillion(IGameObject pc)
+    {
+        var slot = PartySlotOf(pc);
+        if (slot <= 0) return false;
+        SendGameCommand($"/ridepillion <{slot}>");
+        return true;
+    }
+
+    private static int PartySlotOf(IGameObject obj)
+    {
+        var i = 0;
+        foreach (var m in Plugin.PartyList)
+        {
+            i++; // party placeholders are 1-based
+            if (m.GameObject != null && m.GameObject.GameObjectId == obj.GameObjectId)
+                return i;
+        }
+        return 0;
+    }
+
+    /// <summary>
+    /// Crash-safe game text-command send (UIModule.ProcessChatBoxEntry with
+    /// FFXIVClientStructs-managed Utf8String alloc/Dtor, ECommons pattern).
+    /// MUST run on the framework thread — the interact handler already does.
+    /// </summary>
+    private static void SendGameCommand(string command)
+    {
+        if (string.IsNullOrEmpty(command) || command[0] != '/') return;
+        var bytes = System.Text.Encoding.UTF8.GetBytes(command);
+        if (bytes.Length == 0 || bytes.Length > 500) return;
+
+        var ui = UIModule.Instance();
+        if (ui == null) return;
+
+        var mes = FFXIVClientStructs.FFXIV.Client.System.String.Utf8String.FromSequence(bytes);
+        try { ui->ProcessChatBoxEntry(mes); }
+        finally { mes->Dtor(true); }
     }
 }
