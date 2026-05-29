@@ -521,6 +521,37 @@ public sealed class Plugin : IDalamudPlugin
             cameraController.RequestHideCursor();
         }
 
+        // BETA mouse-binds (v0.6.4): render-time SoftTarget restore.
+        //
+        // Game clears SoftTarget at multiple input-pipeline points the
+        // plugin can't intercept from Framework.Update alone — UseAction's
+        // "consumed the target" bookkeeping (v0.6.3 patched this for the
+        // rising-edge frame) AND the end-of-click handler on LMB / RMB
+        // release. The release case fires AFTER MouseBindController's
+        // edge-detect, so a per-tick post-fire restore misses it.
+        //
+        // UiBuilder.Draw runs every render frame at the moment the game
+        // is about to draw its UI layer — exactly the same window the
+        // cursor-hide loop above uses. Writing SoftTarget here means
+        // whatever the game cleared mid-frame gets overridden BEFORE the
+        // renderer observes the null pointer, so the "target acquired"
+        // animation + sound queued on null→entity transition never fires.
+        //
+        // Gates mirror TargetSelector's: only when the user has the beta
+        // feature on AND wants SoftTarget written AND the cam is active
+        // AND there's a cone pick to restore AND no hard target exists
+        // (hard target would legitimately suppress SoftTarget writes).
+        if (Configuration.BetaMouseBindsEnabled
+            && Configuration.WriteSoftTarget
+            && cameraController.IsActive
+            && targetSelector.CachedBest != null
+            && TargetManager.Target == null)
+        {
+            var pick = targetSelector.CachedBest;
+            if (TargetManager.SoftTarget?.GameObjectId != pick.GameObjectId)
+                TargetManager.SoftTarget = pick;
+        }
+
         WindowSystem.Draw();
         reticleOverlay.Draw();
         interactIndicator.Draw();
