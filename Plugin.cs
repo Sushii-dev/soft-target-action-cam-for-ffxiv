@@ -47,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly MouseBindController mouseBindController;
     private readonly MouseOverSuppressor mouseOverSuppressor;
     private readonly SoftTargetSuppressor softTargetSuppressor;
+    private readonly InputStatusSuppressor inputStatusSuppressor;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -128,10 +129,25 @@ public sealed class Plugin : IDalamudPlugin
         // continue uninterrupted.
         softTargetSuppressor = new SoftTargetSuppressor(() => userWantsActive);
 
+        // Third leg of the SimpleTweaks DisableClickTargeting pattern:
+        // game's targeting layer reads click state through
+        // InputManager::GetInputStatus. v0.6.9 counters showed
+        // SetSoftTarget never fires during clicks — meaning the click
+        // path doesn't even reach the setter. Returning 0 from
+        // GetInputStatus for LMB/RMB codes tells the targeting layer
+        // "button never pressed", so the whole acquisition chain
+        // (animation, SFX, soft-target write) is skipped at the source.
+        //
+        // Plugin's own button reads via InputBinding use Win32
+        // GetAsyncKeyState directly — bypass InputManager — so the
+        // plugin's bind firing is unaffected.
+        inputStatusSuppressor = new InputStatusSuppressor(() => userWantsActive);
+
         debugOverlay = new DebugOverlay(
             cursorUpdateHook,
             mouseOverSuppressor,
             softTargetSuppressor,
+            inputStatusSuppressor,
             () => userWantsActive,
             () => cameraController.IsActive,
             IsMenuOpen,
@@ -180,6 +196,7 @@ public sealed class Plugin : IDalamudPlugin
         cursorUpdateHook.Dispose();
         mouseOverSuppressor.Dispose();
         softTargetSuppressor.Dispose();
+        inputStatusSuppressor.Dispose();
         cameraController.Dispose();
     }
 

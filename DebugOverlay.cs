@@ -22,6 +22,7 @@ internal sealed unsafe class DebugOverlay
     private readonly CursorUpdateHook? cursorUpdateHook;
     private readonly MouseOverSuppressor? mouseOverSuppressor;
     private readonly SoftTargetSuppressor? softTargetSuppressor;
+    private readonly InputStatusSuppressor? inputStatusSuppressor;
     private readonly Func<bool> isUserWantsActive;
     private readonly Func<bool> isCamActive;
     private readonly Func<bool> isMenuOpen;
@@ -46,6 +47,7 @@ internal sealed unsafe class DebugOverlay
         CursorUpdateHook? cursorUpdateHook,
         MouseOverSuppressor? mouseOverSuppressor,
         SoftTargetSuppressor? softTargetSuppressor,
+        InputStatusSuppressor? inputStatusSuppressor,
         Func<bool> isUserWantsActive,
         Func<bool> isCamActive,
         Func<bool> isMenuOpen,
@@ -54,6 +56,7 @@ internal sealed unsafe class DebugOverlay
         this.cursorUpdateHook = cursorUpdateHook;
         this.mouseOverSuppressor = mouseOverSuppressor;
         this.softTargetSuppressor = softTargetSuppressor;
+        this.inputStatusSuppressor = inputStatusSuppressor;
         this.isUserWantsActive = isUserWantsActive;
         this.isCamActive = isCamActive;
         this.isMenuOpen = isMenuOpen;
@@ -131,6 +134,21 @@ internal sealed unsafe class DebugOverlay
         else
         {
             ImGui.Text("SoftTargetSuppressor: (null)");
+        }
+
+        ImGui.Separator();
+        if (inputStatusSuppressor != null)
+        {
+            ImGui.Text("InputStatusSuppressor (v0.6.10+):");
+            ImGui.Text($"  total calls:   {inputStatusSuppressor.CallCount}");
+            ImGui.Text($"  suppressed:    {inputStatusSuppressor.SuppressedCount}");
+            ImGui.Text($"  pass-through:  {inputStatusSuppressor.PassThroughCount}");
+            ImGui.TextDisabled("  Suppresses LMB/RMB read for game's targeting");
+            ImGui.TextDisabled("  layer. Should fire heavily during clicks.");
+        }
+        else
+        {
+            ImGui.Text("InputStatusSuppressor: (null)");
         }
 
         ImGui.Separator();
