@@ -253,10 +253,31 @@ public sealed class Plugin : IDalamudPlugin
             ClearNameplateMouseover();
     }
 
-    private static unsafe void ClearNameplateMouseover()
+    private unsafe void ClearNameplateMouseover()
     {
         var ts = FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance();
         if (ts == null) return;
+
+        // v0.6.13: the pulse only fires when the camera is STILL — user
+        // confirmed constant camera motion suppresses it entirely. That
+        // pinpoints the game's idle-cursor hover detection as the source:
+        // when the (hidden, center-locked) cursor sits idle over an enemy,
+        // the game's hover system writes MouseOverTarget (+0xD0) itself,
+        // and the LMB-release click handler promotes that cached field to
+        // SoftTarget with the acquire cue. Our GetMouseOverObject hook
+        // (a different raycast entry) doesn't stop the game's own hover
+        // write, so we clear the cached field directly each frame.
+        //
+        // Skip nulling +0xD0 when the user has WriteMouseOverTarget on
+        // AND there's a cone pick — that path legitimately wants the
+        // field populated for ReAction's Field Target pronoun. In that
+        // case TargetSelector owns the field; the reseat would target the
+        // cone pick anyway, which is acceptable.
+        var keepMouseOver = Configuration.WriteMouseOverTarget
+                            && targetSelector.CachedBest != null;
+        if (!keepMouseOver && ts->MouseOverTarget != null)
+            ts->MouseOverTarget = null;
+
         if (ts->MouseOverNameplateTarget != null)
             ts->MouseOverNameplateTarget = null;
     }
