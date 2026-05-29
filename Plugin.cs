@@ -459,6 +459,16 @@ public sealed class Plugin : IDalamudPlugin
         interactKeyWasDown = isDown;
         if (!rising) return;
 
+        // Never fire while the user is typing. InputBinding.IsDown already
+        // gates ImGui text fields (WantTextInput) for Dalamud / Penumbra
+        // UI; this adds the GAME-side gate — chat box, market-board /
+        // search comment, letter writing, /tell, rename dialogs, etc. —
+        // via RaptureAtkModule's own "is a text widget focused" check.
+        // Dialogue advance is unaffected: a Talk / SelectYesno addon does
+        // NOT register as text input, so IsTextInputActive stays false
+        // there and the interact key still advances dialogue.
+        if (IsGameTextInputActive()) return;
+
         // Audio feedback differs by outcome:
         //  - AdvancedDialogue: silent (game plays its own click sounds).
         //  - Interacted / Examined: success chime — the moment a fresh
@@ -477,6 +487,19 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             // AdvancedDialogue intentionally falls through silent.
         }
+    }
+
+    /// <summary>
+    /// True while any FFXIV-native text widget holds input focus (chat,
+    /// market-board search, search comment, letters, /tell, rename, etc.).
+    /// The game's own keybind dispatch uses this same check to stop binds
+    /// firing while you type. Complements ImGui's WantTextInput (which
+    /// covers Dalamud / ImGui text fields) for full typing coverage.
+    /// </summary>
+    private static unsafe bool IsGameTextInputActive()
+    {
+        var ram = FFXIVClientStructs.FFXIV.Client.UI.RaptureAtkModule.Instance();
+        return ram != null && ram->AtkModule.IsTextInputActive();
     }
 
     private void HandleClearTargetKey(bool menuOpen)

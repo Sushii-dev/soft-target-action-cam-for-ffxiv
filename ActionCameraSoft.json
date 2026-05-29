@@ -6,5 +6,6 @@
   "RepoUrl": "https://github.com/Sushii-dev/soft-target-action-cam-for-ffxiv",
   "ApplicableVersion": "any",
   "Tags": ["camera", "action-camera", "targeting", "lockon", "soft-target", "qol"],
-  "DalamudApiLevel": 15
+  "DalamudApiLevel": 15,
+  "IconUrl": "https://raw.githubusercontent.com/Sushii-dev/soft-target-action-cam-for-ffxiv/main/images/icon.png"
 }
