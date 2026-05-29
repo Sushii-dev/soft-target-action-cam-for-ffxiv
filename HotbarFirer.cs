@@ -31,10 +31,34 @@ internal static unsafe class HotbarFirer
     public const uint MaxSlotId = 15;
 
     /// <summary>
+    /// Sentinel "no target / let the game auto-resolve" id used by
+    /// <see cref="ActionManager.UseAction"/>. Lower 32 bits = uint.MaxValue
+    /// masked off — matches FFXIVClientStructs' default.
+    /// </summary>
+    private const ulong EmptyTargetId = 0xE000_0000UL;
+
+    /// <summary>
     /// Try to fire the slot at <paramref name="hotbarId"/> / <paramref name="slotId"/>.
-    /// Returns true if the game accepted the call (i.e. ExecuteSlotById was
+    /// Returns true if the game accepted the call (i.e. an action was
     /// invoked); false if the bar/slot is out of range, empty, or the
     /// resolved action is on cooldown / unusable right now.
+    ///
+    /// For <c>Action</c> / <c>CraftAction</c> slots with a resolvable
+    /// target (hard target preferred, soft target fallback), this calls
+    /// <see cref="ActionManager.UseAction"/> directly with the explicit
+    /// target id. That bypasses the game's soft→hard promotion path —
+    /// promotion was previously rejected by <c>HardTargetSuppressor</c>
+    /// but the brief promotion still fired UI cues (re-highlight
+    /// animation + click SFX) that the user perceived as the soft-target
+    /// reticle "reattaching" on every bound fire (v0.6.0 playtest).
+    /// Pre-resolving the target avoids the promotion path entirely.
+    ///
+    /// All other slot types — including Action with no resolvable target
+    /// — go through <see cref="RaptureHotbarModule.ExecuteSlotById"/>, the
+    /// same path the game drives from a keyboard hotkey, so Macro / Item
+    /// / GeneralAction / PetAction / area-targeted ground reticle / etc.
+    /// dispatch correctly and any plugin that hooks the slot path
+    /// (ReAction, MOAction, Redirect) layers on top automatically.
     /// </summary>
     public static bool Fire(uint hotbarId, uint slotId)
     {
@@ -52,33 +76,57 @@ internal static unsafe class HotbarFirer
         if (slot->CommandType == RaptureHotbarModule.HotbarSlotType.Empty)
             return false;
 
-        // Spam gate. For Action and CraftAction the game emits a toast
-        // when called while on cooldown or otherwise unusable; for Item
-        // it raises a chat error. Both feel noisy if rapid-fire clicks
-        // happen during a GCD, so we short-circuit before the call.
-        // GeneralAction / Macro / Mount / etc. don't have GetActionStatus
-        // semantics, so we let them through unconditionally — the slot
-        // dispatcher will handle its own "can't do that right now"
-        // behaviour quietly.
         var am = ActionManager.Instance();
-        if (am != null)
+        if (am == null) return false;
+
+        var t = slot->CommandType;
+        if (t == RaptureHotbarModule.HotbarSlotType.Action ||
+            t == RaptureHotbarModule.HotbarSlotType.CraftAction)
         {
-            switch (slot->CommandType)
+            // Spam gate: skip when the action is on cooldown / unusable.
+            // The game emits an "Unable to use that action now" toast on
+            // each failed call; rapid-fire clicks mid-GCD would fill the
+            // screen with toasts without this guard.
+            if (am->GetActionStatus(ActionType.Action, slot->CommandId) != 0)
+                return false;
+
+            var targetId = ResolveExplicitTarget();
+            if (targetId != EmptyTargetId)
             {
-                case RaptureHotbarModule.HotbarSlotType.Action:
-                case RaptureHotbarModule.HotbarSlotType.CraftAction:
-                    if (am->GetActionStatus(ActionType.Action, slot->CommandId) != 0)
-                        return false;
-                    break;
-                case RaptureHotbarModule.HotbarSlotType.Item:
-                    if (am->GetActionStatus(ActionType.Item, slot->CommandId) != 0)
-                        return false;
-                    break;
+                // Direct fire with explicit target — no promotion path
+                // runs game-side, no flicker UI cue. Self-cast and party-
+                // target actions are silently retargeted by the game via
+                // the action's own target rules, so passing a hostile id
+                // for a defensive cooldown is harmless.
+                return am->UseAction(ActionType.Action, slot->CommandId, targetId);
             }
+
+            // No target resolvable — fall through to ExecuteSlotById so
+            // area-targeted (ground reticle) actions get their normal
+            // null-target dispatch.
+        }
+        else if (t == RaptureHotbarModule.HotbarSlotType.Item)
+        {
+            if (am->GetActionStatus(ActionType.Item, slot->CommandId) != 0)
+                return false;
         }
 
         module->ExecuteSlotById(hotbarId, slotId);
         return true;
+    }
+
+    /// <summary>
+    /// Resolve the player's currently-intended target for an action fire.
+    /// Mirrors FFXIV's own priority (hard target wins; soft target falls
+    /// back). Returns <see cref="EmptyTargetId"/> when nothing is
+    /// targeted — the caller treats that as "let the game decide" and
+    /// falls back to <c>ExecuteSlotById</c>.
+    /// </summary>
+    private static ulong ResolveExplicitTarget()
+    {
+        var tm = Plugin.TargetManager;
+        var t = tm.Target ?? tm.SoftTarget;
+        return t?.GameObjectId ?? EmptyTargetId;
     }
 
     /// <summary>
