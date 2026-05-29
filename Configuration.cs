@@ -270,7 +270,10 @@ public class Configuration : IPluginConfiguration
     // dropped while cam active; 0 = mute nothing (discovery default until
     // the id is confirmed via the debug overlay's sound log).
     public bool MuteSoftTargetSoundInCam { get; set; } = true;
-    public uint MutedSoftTargetSoundId { get; set; } = 0;
+    // Effect id 11 = the soft-target / target-acquire UI sound (confirmed
+    // via the interact sound-tester). Dropped while cam active when
+    // MuteSoftTargetSoundInCam is on.
+    public uint MutedSoftTargetSoundId { get; set; } = 11;
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
@@ -301,6 +304,20 @@ public class Configuration : IPluginConfiguration
             // repair needed — new fields default safely. Bump for bookkeeping
             // so future v3→v4 migrations can target the right starting state.
             Version = 3;
+            dirty = true;
+        }
+
+        if (Version < 4)
+        {
+            // v0.6.18 shipped MutedSoftTargetSoundId defaulting to 0 (off)
+            // before the id was known. v0.6.20 confirmed the soft-target
+            // acquire sound is effect id 11. Anyone still on the 0 default
+            // (never set it — there was no UI) gets bumped to 11 so the
+            // mute actually takes effect. A user who somehow set a custom
+            // non-zero value is left alone.
+            if (MutedSoftTargetSoundId == 0)
+                MutedSoftTargetSoundId = 11;
+            Version = 4;
             dirty = true;
         }
 

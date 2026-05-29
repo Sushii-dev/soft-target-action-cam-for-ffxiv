@@ -7,7 +7,7 @@
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <Optimize>true</Optimize>
-    <AssemblyVersion>0.6.19.0</AssemblyVersion>
+    <AssemblyVersion>0.6.20.0</AssemblyVersion>
     <AssemblyName>ActionCameraSoft</AssemblyName>
     <RootNamespace>ActionCamera</RootNamespace>
   </PropertyGroup>
