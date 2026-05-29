@@ -1,8 +1,8 @@
 {
   "Author": "Sushii-dev (originally by grimgrum)",
   "Name": "Veiled Aim (BDO + ER)",
-  "Punchline": "BDO-style cursor-driven action camera with Elden Ring-style soft targeting.",
-  "Description": "Press a key to hide the cursor — your character auto-faces the camera, the mouse rotates it freely, and the most-centred hostile enemy in your field of view becomes a soft target (yellow outline + red ring, ReAction 'Field Target' and 'Soft Target' pronoun compatible). Any UI popup that shows the cursor pauses the camera; press the key again to resume. Configurable hard-target keybind (cone pauses while a hard target is locked, auto-resumes when it dies/despawns/clears), click-to-target suppression while the camera is active, and per-scenario auto-resume exemptions for menus / cutscenes / dialogues / zone transitions. Originally forked from grimgrum/action-cam-for-FFXIV — the camera activation model, targeting pipeline, and input handling have been rewritten.",
+  "Punchline": "Final Fantasy XIV reimagined as an action game. Look to aim, move to fight.",
+  "Description": "Veiled Aim turns Final Fantasy XIV into the action game it always flirted with being.\n\nHide the cursor and the world snaps into focus. Your character faces where you look, the mouse turns the camera, and whatever sits in your sights becomes your target. No clicking, no tab cycling. Just aim and act: the precision of a controller married to the speed of a keyboard.\n\nBind your skills to the mouse and they fire like native keys, queued and responsive, hold to repeat. One interact key carries the rest of the world: talk, loot, gather, examine, ride pillion, roll on loot, all without a menu, each marked by a soft glowing quest style cue.\n\nIt is not a tweak. It is a new way to hold the game. Combat that flows, exploration alive, your hands free to just play.\n\nFully configurable. Rebuilt from grimgrum's action camera for FFXIV.",
   "RepoUrl": "https://github.com/Sushii-dev/soft-target-action-cam-for-ffxiv",
   "ApplicableVersion": "any",
   "Tags": ["camera", "action-camera", "targeting", "lockon", "soft-target", "qol"],
