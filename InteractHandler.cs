@@ -351,7 +351,16 @@ internal sealed unsafe class InteractHandler
         var k = obj.ObjectKind;
         return k == DalamudObjectKind.EventNpc
             || k == DalamudObjectKind.EventObj
-            || k == DalamudObjectKind.Aetheryte;
+            || k == DalamudObjectKind.Aetheryte
+            // Treasure = dungeon/raid loot coffers. Opening them via
+            // InteractWithObject is not blocked by weapon stance, and the
+            // world-interact path here has no weapon-drawn gate (only the
+            // PC-examine path does), so coffers open fine mid-duty with the
+            // weapon out — which is exactly when you loot them.
+            || k == DalamudObjectKind.Treasure
+            // GatheringPoint = mining / botany / fishing nodes. The
+            // interact key should start gathering just like clicking them.
+            || k == DalamudObjectKind.GatheringPoint;
     }
 
     private static bool IsExaminablePlayer(IGameObject obj)

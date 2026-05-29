@@ -118,20 +118,17 @@ public sealed class InteractIndicator
 
     private static bool PassesGameStateGates()
     {
-        // Sheathed: nothing else makes sense if the player is mid-fight.
-        var lp = Plugin.ObjectTable.LocalPlayer;
-        if (lp == null) return false;
-        if (lp.StatusFlags.HasFlag(StatusFlags.WeaponOut)) return false;
-
-        // In combat at all (even out-of-aggro on a mob looking your way).
-        if (Plugin.Condition[ConditionFlag.InCombat]) return false;
-
-        // BoundByDuty covers dungeons, trials, raids, deep dungeons,
-        // variant / criterion dungeons, alliance — all the dense HUD
-        // scenarios where another overlay would be noise.
-        if (Plugin.Condition[ConditionFlag.BoundByDuty]) return false;
-
-        return true;
+        // v0.6.27: the old gates hid the indicator while the weapon was
+        // out / in combat / bound by duty. That defeated the main use the
+        // user wanted — seeing dungeon/raid LOOT COFFERS (you're always
+        // weapon-out + BoundByDuty next to those) — and was the prime
+        // cause of the indicator "bugging out / disappearing": those
+        // conditions flip constantly near combat, blinking the overlay.
+        // The candidate-null check in Draw() already hides it when there's
+        // nothing to point at, so unconditional show (when logged in) is
+        // both what the user wants and more robust. The ShowInteractIndicator
+        // master toggle still gates the whole feature.
+        return Plugin.ObjectTable.LocalPlayer != null;
     }
 
     // ── Style: ground ring ──────────────────────────────────────────────────
