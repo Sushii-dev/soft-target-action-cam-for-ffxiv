@@ -34,7 +34,7 @@ internal sealed unsafe class SoundSuppressor : IDisposable
 
     private readonly Hook<InitSoundDelegate>? hook;
     private readonly Func<bool> isCamActive;
-    private readonly Func<uint> getMutedId;
+    private readonly Func<uint, bool> isMutedId;
     private readonly Func<bool> shouldLog;
 
     public long CallCount       { get; private set; }
@@ -42,10 +42,10 @@ internal sealed unsafe class SoundSuppressor : IDisposable
     public uint LastIdInCam     { get; private set; }
     public long SuppressedCount { get; private set; }
 
-    public SoundSuppressor(Func<bool> isCamActive, Func<uint> getMutedId, Func<bool> shouldLog)
+    public SoundSuppressor(Func<bool> isCamActive, Func<uint, bool> isMutedId, Func<bool> shouldLog)
     {
         this.isCamActive = isCamActive;
-        this.getMutedId  = getMutedId;
+        this.isMutedId   = isMutedId;
         this.shouldLog   = shouldLog;
 
         try
@@ -78,8 +78,7 @@ internal sealed unsafe class SoundSuppressor : IDisposable
                 Plugin.Log.Information($"[Veiled] InitSound idx={soundIdx} cat={category} path={p}");
             }
 
-            var muted = getMutedId();
-            if (muted != 0 && soundIdx == muted)
+            if (isMutedId(soundIdx))
             {
                 SuppressedCount++;
                 return nint.Zero; // suppress: no SoundData created, no playback

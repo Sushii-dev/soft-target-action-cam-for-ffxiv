@@ -270,10 +270,15 @@ public class Configuration : IPluginConfiguration
     // dropped while cam active; 0 = mute nothing (discovery default until
     // the id is confirmed via the debug overlay's sound log).
     public bool MuteSoftTargetSoundInCam { get; set; } = true;
-    // Effect id 11 = the soft-target / target-acquire UI sound (confirmed
-    // via the interact sound-tester). Dropped while cam active when
-    // MuteSoftTargetSoundInCam is on.
+    // Deprecated (v0.6.20, single-id): superseded by MutedSoftTargetSoundIds.
+    // Kept so old configs round-trip; the migration folds its value into
+    // the list and runtime reads the list only.
     public uint MutedSoftTargetSoundId { get; set; } = 11;
+    // SoundManager.InitSound indices dropped while cam active when
+    // MuteSoftTargetSoundInCam is on. Confirmed via the debug sound log:
+    //   11 = soft-target ACQUIRE cue
+    //    3 = soft-target RELEASE cue
+    public List<uint> MutedSoftTargetSoundIds { get; set; } = new() { 3, 11 };
 
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
@@ -318,6 +323,20 @@ public class Configuration : IPluginConfiguration
             if (MutedSoftTargetSoundId == 0)
                 MutedSoftTargetSoundId = 11;
             Version = 4;
+            dirty = true;
+        }
+
+        if (Version < 5)
+        {
+            // v0.6.22: single muted id → list. Acquire = 11, release = 3
+            // (both confirmed via the debug sound log). Fold the old
+            // single value in and ensure both known cues are present.
+            MutedSoftTargetSoundIds ??= new List<uint>();
+            if (MutedSoftTargetSoundId != 0 && !MutedSoftTargetSoundIds.Contains(MutedSoftTargetSoundId))
+                MutedSoftTargetSoundIds.Add(MutedSoftTargetSoundId);
+            if (!MutedSoftTargetSoundIds.Contains(11)) MutedSoftTargetSoundIds.Add(11);
+            if (!MutedSoftTargetSoundIds.Contains(3))  MutedSoftTargetSoundIds.Add(3);
+            Version = 5;
             dirty = true;
         }
 

@@ -163,7 +163,8 @@ public sealed class Plugin : IDalamudPlugin
         // flip MutedSoftTargetSoundId once known.
         soundSuppressor = new SoundSuppressor(
             () => userWantsActive && Configuration.MuteSoftTargetSoundInCam,
-            () => Configuration.MutedSoftTargetSoundId,
+            id => Configuration.MutedSoftTargetSoundIds != null
+                  && Configuration.MutedSoftTargetSoundIds.Contains(id),
             () => debugOverlay != null && debugOverlay.Enabled);
 
         debugOverlay = new DebugOverlay(
