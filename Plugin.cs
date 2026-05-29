@@ -144,12 +144,15 @@ public sealed class Plugin : IDalamudPlugin
         // plugin's bind firing is unaffected.
         inputStatusSuppressor = new InputStatusSuppressor(() => userWantsActive);
 
-        // Re-pin the soft target if Escape / cancel-target clears it while
-        // cam active — stops the reticle's null→entity acquire pulse on
-        // Escape. See SoftTargetGuard for the full change-detection
-        // rationale. Covers the Escape trigger deterministically; the LMB
-        // trigger is a separate inlined clear handled elsewhere.
-        softTargetGuard = new SoftTargetGuard(() => userWantsActive);
+        // Enforce SoftTarget == cone pick late each frame (in
+        // HandleTargetingKeybinds, after input, before the reticle read)
+        // so any same-frame clear — Escape's keybind clear or the LMB
+        // mouse-commit's inlined clear — is repaired before the reticle
+        // can animate a null→entity edge. See SoftTargetGuard. Gated on
+        // the plugin actually owning the soft target (WriteSoftTarget on).
+        softTargetGuard = new SoftTargetGuard(
+            () => userWantsActive && Configuration.WriteSoftTarget,
+            () => targetSelector.CachedBestAddress);
 
         debugOverlay = new DebugOverlay(
             cursorUpdateHook,

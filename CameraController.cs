@@ -63,28 +63,6 @@ public sealed unsafe class CameraController : IDisposable
     private POINT screenCenter;
     private POINT savedCursorPos;
 
-    // ── Cursor jitter (v0.6.14) ──────────────────────────────────────────────
-    //
-    // FFXIV only runs its mouseover / click-target object pick when the
-    // cursor is IDLE between frames. The plugin warps the (hidden) cursor
-    // to a fixed point every frame, so when the user isn't physically
-    // moving the mouse the cursor reads as idle — the game caches a
-    // mouseover, and an LMB/RMB release promotes it to soft target with
-    // the "acquired" ring pulse + sound. The user confirmed: any constant
-    // camera/cursor MOTION suppresses the pulse entirely, regardless of
-    // where the cursor points — it's idle-vs-moving, not position.
-    //
-    // Fix: warp to a slightly different point each frame (a small cycling
-    // offset), so the game always sees the cursor as moving and never
-    // caches a mouseover to promote. The cursor is hidden, so the jitter
-    // is invisible. Camera-rotation delta is measured against the LAST
-    // warp target (lastWarp) rather than a fixed centre, so the jitter
-    // contributes zero to the rotation — only the user's real physical
-    // motion does.
-    private POINT lastWarp;
-    private int jitterPhase;
-    private const int JitterRadiusPx = 3;
-
     // Two-stage spike guard for XWayland warp staleness:
     //
     //   Stage A (firstMotionAfterActivate):
@@ -162,11 +140,6 @@ public sealed unsafe class CameraController : IDisposable
         {
             SetCursorPos(screenCenter.X, screenCenter.Y);
         }
-
-        // Anchor the jitter delta-reference at centre so the first Update
-        // frame reads a zero delta (cursor was just warped to centre).
-        lastWarp = screenCenter;
-        jitterPhase = 0;
 
         firstMotionAfterActivate = true;
         framesSinceFirstMotion = 0;
@@ -319,37 +292,16 @@ public sealed unsafe class CameraController : IDisposable
             // per-handler call needed here.
             firstMotionAfterActivate = true;
             framesSinceFirstMotion = 0;
-            // Game owns the cursor this frame; re-anchor so the first
-            // frame after we take it back doesn't read a bogus delta.
-            lastWarp = screenCenter;
             return;
         }
 
-        // Read mouse position. Delta is measured against the previous
-        // warp target (lastWarp), NOT a fixed centre — that makes the
-        // per-frame jitter offset (applied below) transparent to camera
-        // rotation, so only the user's real physical motion turns the
-        // camera.
+        // Read & reset mouse position each frame.
         GetCursorPos(out var cur);
-        var rawDx = cur.X - lastWarp.X;
-        var rawDy = cur.Y - lastWarp.Y;
+        var rawDx = cur.X - screenCenter.X;
+        var rawDy = cur.Y - screenCenter.Y;
         var dx = rawDx * config.MouseSensitivityX;
         var dy = rawDy * config.MouseSensitivityY;
-
-        // Compute this frame's jittered warp target. Cycling the offset
-        // each frame keeps the cursor perpetually "moving" from the
-        // game's point of view, which suppresses its idle mouseover pick
-        // (the source of the click-acquire ring pulse + sound). Offset
-        // stays within JitterRadiusPx of centre so the cursor never
-        // drifts meaningfully; position is irrelevant to the fix, only
-        // frame-to-frame movement.
-        jitterPhase = (jitterPhase + 1) & 3;
-        var jx = jitterPhase switch { 0 => JitterRadiusPx, 2 => -JitterRadiusPx, _ => 0 };
-        var jy = jitterPhase switch { 1 => JitterRadiusPx, 3 => -JitterRadiusPx, _ => 0 };
-        var warpX = screenCenter.X + jx;
-        var warpY = screenCenter.Y + jy;
-        SetCursorPos(warpX, warpY);
-        lastWarp = new POINT { X = warpX, Y = warpY };
+        SetCursorPos(screenCenter.X, screenCenter.Y);
 
         // Stage A — wait for the first nonzero delta. Until motion starts,
         // the user is stationary and there's no spike to catch yet. The

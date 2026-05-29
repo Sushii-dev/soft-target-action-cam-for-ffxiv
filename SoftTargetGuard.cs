@@ -22,16 +22,25 @@ namespace ActionCamera;
 /// saw zero calls). The plugin's next-frame re-write then produces the
 /// null→entity edge the reticle animates.
 ///
-/// Fix: hook HandleTargetingKeybinds, snapshot SoftTarget before the
-/// original runs, and if the original cleared it while the action camera
-/// is active, restore the snapshot in the SAME call — before the reticle
-/// manager's frame read. No null is ever observed, so no transition, no
-/// pulse. The plugin's own cone writes are untouched (they run elsewhere
-/// in the tick); this only undoes the game's clear.
+/// Fix: hook HandleTargetingKeybinds and, after the original runs,
+/// ENFORCE SoftTarget == the plugin's current cone pick whenever the cam
+/// is active and the plugin owns the soft target. This call runs every
+/// frame, after input processing, and before the reticle manager's frame
+/// read (proven: re-pinning here kills the Escape pulse). Forcing the
+/// field back to the cone pick here therefore undoes ANY same-frame
+/// clear — Escape's keybind clear AND the left-click commit's inlined
+/// clear — before the reticle can observe a null→entity edge. No edge,
+/// no pulse.
 ///
-/// This covers the Escape trigger deterministically. The LMB trigger
-/// clears +0x88 from a different, inlined code path (the mouse click-
-/// commit handler) and is handled separately.
+/// Enforce (not just restore-if-was-set) so it catches clears that
+/// happen in OTHER handlers earlier in the same frame — e.g. the LMB
+/// mouse-commit, whose inlined +0x88 clear has no hookable symbol. As
+/// long as that clear lands before this per-frame call, the enforce
+/// repairs it in time.
+///
+/// The plugin's TargetSelector already writes the cone pick to +0x88
+/// earlier in the tick; this is a second, later-in-frame assertion of
+/// the same value, so it never fights the plugin's own intent.
 /// </summary>
 internal sealed unsafe class SoftTargetGuard : IDisposable
 {
@@ -39,13 +48,15 @@ internal sealed unsafe class SoftTargetGuard : IDisposable
 
     private readonly Hook<HandleTargetingKeybindsDelegate>? hook;
     private readonly Func<bool> shouldGuard;
+    private readonly Func<nint> getConePickAddr;
 
     public long CallCount    { get; private set; }
     public long RepinCount   { get; private set; }
 
-    public SoftTargetGuard(Func<bool> shouldGuard)
+    public SoftTargetGuard(Func<bool> shouldGuard, Func<nint> getConePickAddr)
     {
         this.shouldGuard = shouldGuard;
+        this.getConePickAddr = getConePickAddr;
 
         try
         {
@@ -69,18 +80,19 @@ internal sealed unsafe class SoftTargetGuard : IDisposable
     private void Detour(TargetSystem* ts)
     {
         CallCount++;
-
-        var softBefore = ts->SoftTarget;
         hook!.Original(ts);
 
-        // Re-pin in the same call if the keybind handler cleared our soft
-        // target while the cam is active. Restoring before the reticle
-        // manager's frame read means the null→entity edge never exists.
-        if (shouldGuard()
-            && softBefore != null
-            && ts->SoftTarget == null)
+        if (!shouldGuard()) return;
+
+        // Enforce SoftTarget == cone pick, after the original keybind
+        // processing and before the reticle's frame read. Repairs any
+        // same-frame clear (Escape keybind OR the LMB mouse-commit's
+        // inlined clear) so the reticle never sees a null→entity edge.
+        var pick = (GameObject*)getConePickAddr();
+        if (pick == null) return;
+        if (ts->SoftTarget != pick)
         {
-            ts->SoftTarget = softBefore;
+            ts->SoftTarget = pick;
             RepinCount++;
         }
     }
