@@ -86,7 +86,7 @@ public sealed class Plugin : IDalamudPlugin
         // reference so it reads the live userWantsActive each tick.
         Func<bool> shouldSuppress = () =>
             userWantsActive
-            && !CameraController.IsRmbHeld()
+            && !IsVanillaRmbCameraGesture()
             && !IsMenuOpen();
 
         cursorShowHook = new CursorShowHook(shouldSuppress);
@@ -423,6 +423,29 @@ public sealed class Plugin : IDalamudPlugin
         return false;
     }
 
+    /// <summary>
+    /// True when RMB is held as a VANILLA camera-drag gesture — held but
+    /// NOT bound to a mouse-bind. The cursor-suppression carve-outs exist
+    /// so that vanilla RMB-drag camera gets the cursor's natural state;
+    /// but when RMB is bound (beta binds on), a held RMB is a hotbar-fire
+    /// gesture, not a camera gesture. If the carve-out fired for bound
+    /// RMB, the cursor would un-hide mid-hold, MouseBindController's
+    /// cursor-visible gate would bail, and RMB hold-repeat would break
+    /// (LMB was unaffected because it was never in the carve-out). So the
+    /// carve-out must apply only to the vanilla (unbound) RMB gesture.
+    /// </summary>
+    private bool IsVanillaRmbCameraGesture()
+        => CameraController.IsRmbHeld() && !IsRmbBoundToFire();
+
+    private bool IsRmbBoundToFire()
+    {
+        if (!Configuration.BetaMouseBindsEnabled) return false;
+        foreach (var b in Configuration.MouseBinds)
+            if (b != null && b.Button == Dalamud.Game.ClientState.Keys.VirtualKey.RBUTTON)
+                return true;
+        return false;
+    }
+
     private void HandleHardTargetKey(bool menuOpen)
     {
         if (Configuration.HardTargetKey == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY) return;
@@ -665,7 +688,7 @@ public sealed class Plugin : IDalamudPlugin
         // RequestHideCursor() path (which calls AtkCursor.Hide() internally
         // — never writes the field directly, that caused 0.5.16.0's cam
         // breakage).
-        if (userWantsActive && !CameraController.IsRmbHeld() && !IsMenuOpen())
+        if (userWantsActive && !IsVanillaRmbCameraGesture() && !IsMenuOpen())
         {
             cameraController.RequestHideCursor();
         }
