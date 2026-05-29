@@ -261,6 +261,17 @@ public class Configuration : IPluginConfiguration
 
     public List<MouseBind> MouseBinds { get; set; } = new();
 
+    // --- Soft-target acquire sound mute (v0.6.18) ---
+    //
+    // Mute the soft-target "acquired" UI sound while the action camera is
+    // active. The sound fires fire-and-forget at target-commit time
+    // (e.g. on a left-click that re-acquires the soft target), separate
+    // from the reticle animation. MutedSoftTargetSoundId is the effect id
+    // dropped while cam active; 0 = mute nothing (discovery default until
+    // the id is confirmed via the debug overlay's sound log).
+    public bool MuteSoftTargetSoundInCam { get; set; } = true;
+    public uint MutedSoftTargetSoundId { get; set; } = 0;
+
     public void Save() => Plugin.PluginInterface.SavePluginConfig(this);
 
     /// <summary>

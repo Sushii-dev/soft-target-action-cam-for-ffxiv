@@ -49,6 +49,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly SoftTargetSuppressor softTargetSuppressor;
     private readonly InputStatusSuppressor inputStatusSuppressor;
     private readonly SoftTargetGuard softTargetGuard;
+    private readonly SoundSuppressor soundSuppressor;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -164,6 +165,15 @@ public sealed class Plugin : IDalamudPlugin
             IsMenuOpen,
             CameraController.IsRmbHeld);
 
+        // Mute the soft-target acquire sound while cam active. Created
+        // after debugOverlay so its discovery log can be gated on the
+        // overlay being enabled. Muted id is 0 (off) until confirmed via
+        // the debug sound log; flip MutedSoftTargetSoundId once known.
+        soundSuppressor = new SoundSuppressor(
+            () => userWantsActive && Configuration.MuteSoftTargetSoundInCam,
+            () => Configuration.MutedSoftTargetSoundId,
+            () => debugOverlay.Enabled);
+
         // BETA: mouse-button → hotbar fire. Hard-gated to cam-active +
         // cursor-hidden so vanilla mouse semantics stay untouched outside
         // the action mode. Toggle defaults to OFF; existing users see
@@ -209,6 +219,7 @@ public sealed class Plugin : IDalamudPlugin
         softTargetSuppressor.Dispose();
         inputStatusSuppressor.Dispose();
         softTargetGuard.Dispose();
+        soundSuppressor.Dispose();
         cameraController.Dispose();
     }
 
