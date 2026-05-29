@@ -48,6 +48,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly MouseOverSuppressor mouseOverSuppressor;
     private readonly SoftTargetSuppressor softTargetSuppressor;
     private readonly InputStatusSuppressor inputStatusSuppressor;
+    private readonly SoftTargetGuard softTargetGuard;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -143,6 +144,13 @@ public sealed class Plugin : IDalamudPlugin
         // plugin's bind firing is unaffected.
         inputStatusSuppressor = new InputStatusSuppressor(() => userWantsActive);
 
+        // Re-pin the soft target if Escape / cancel-target clears it while
+        // cam active — stops the reticle's null→entity acquire pulse on
+        // Escape. See SoftTargetGuard for the full change-detection
+        // rationale. Covers the Escape trigger deterministically; the LMB
+        // trigger is a separate inlined clear handled elsewhere.
+        softTargetGuard = new SoftTargetGuard(() => userWantsActive);
+
         debugOverlay = new DebugOverlay(
             cursorUpdateHook,
             mouseOverSuppressor,
@@ -197,6 +205,7 @@ public sealed class Plugin : IDalamudPlugin
         mouseOverSuppressor.Dispose();
         softTargetSuppressor.Dispose();
         inputStatusSuppressor.Dispose();
+        softTargetGuard.Dispose();
         cameraController.Dispose();
     }
 
