@@ -103,9 +103,17 @@ public sealed class Plugin : IDalamudPlugin
         // chain kills the whole acquisition path: no sound, no reticle
         // re-attach animation, no SetSoftTarget call, no SetHardTarget
         // call. Same pattern SimpleTweaks' DisableClickTargeting uses.
-        mouseOverSuppressor = new MouseOverSuppressor(
-            () => cameraController.IsActive
-                  && !CameraController.IsGameCursorVisible());
+        //
+        // Predicate uses userWantsActive (the user's stable intent flag)
+        // rather than cameraController.IsActive + cursor-visible check.
+        // v0.6.7 diagnostic counters showed pass-throughs spiking during
+        // clicks — the cursor-visible check was leaking because the
+        // game's click handler flips AtkCursor.IsVisible transiently
+        // via a path the cursor-show hook doesn't catch. userWantsActive
+        // only flips on activation-key toggle or sticky-off (cursor
+        // visible + menu open), not on transient pulses, so the
+        // predicate stays true through the entire click.
+        mouseOverSuppressor = new MouseOverSuppressor(() => userWantsActive);
 
         debugOverlay = new DebugOverlay(
             cursorUpdateHook,
