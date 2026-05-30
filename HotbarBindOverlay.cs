@@ -65,7 +65,7 @@ public sealed unsafe class HotbarBindOverlay
 
         var dl        = ImGui.GetForegroundDrawList();
         var textCol   = ImGui.ColorConvertFloat4ToU32(config.MouseBindHintColor);
-        var shadowCol = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.9f));
+        var outlineCol = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 1f));
 
         foreach (var name in ActionBarAddons)
         {
@@ -93,17 +93,17 @@ public sealed unsafe class HotbarBindOverlay
                 if (node == null) continue;
                 if ((node->NodeFlags & NodeFlags.Visible) == 0) continue;
 
-                DrawLabels(dl, node, binds, textCol, shadowCol);
+                DrawLabels(dl, node, binds, textCol, outlineCol);
             }
         }
     }
 
-    // Top-left corner, no background box — just shadowed text, sized to track the
-    // slot's HUD scale. The modifier glyph (↑ / A / C) is drawn smaller than the
-    // button text, mirroring the game's native keybind-hint look. Multiple binds
-    // on one slot stack downward.
+    // Flush to the slot's top-left edge (matching the native keybind hint), no
+    // background box — outlined text sized to track HUD scale. The modifier
+    // glyph (↑ / A / C) is drawn smaller than the button text, native-hint style.
+    // Multiple binds on one slot stack downward.
     private static void DrawLabels(ImDrawListPtr dl, AtkResNode* node,
-        List<(string Mod, string Btn)> binds, uint textCol, uint shadowCol)
+        List<(string Mod, string Btn)> binds, uint textCol, uint outlineCol)
     {
         float scale = 1f;
         for (var n = node; n != null; n = n->ParentNode)
@@ -111,11 +111,13 @@ public sealed unsafe class HotbarBindOverlay
 
         var font     = ImGui.GetFont();
         var baseSize = ImGui.GetFontSize();
-        // Track HUD scale but stay legible; clamp so tiny bars don't vanish.
-        var btnSize  = MathClamp(baseSize * scale * 0.85f, 10f, baseSize);
-        var modSize  = btnSize * 0.7f;
+        // Full base size at 1.0 HUD scale (matches native hint size); clamp so
+        // small bars stay legible and large bars don't overflow the slot.
+        var btnSize  = MathClamp(baseSize * scale, 11f, baseSize);
+        var modSize  = btnSize * 0.75f;
 
-        var pos    = new Vector2(node->ScreenX, node->ScreenY) + new Vector2(scale, scale);
+        // Flush top-left, tiny inset so the outline doesn't clip the slot edge.
+        var pos    = new Vector2(node->ScreenX + 1f, node->ScreenY + 1f);
         var lineH  = btnSize + 1f;
 
         foreach (var (mod, btn) in binds)
@@ -124,18 +126,22 @@ public sealed unsafe class HotbarBindOverlay
             if (mod.Length > 0)
             {
                 // Smaller, top-aligned (slightly raised) modifier prefix.
-                Text(dl, font, modSize, new Vector2(x, pos.Y), mod, textCol, shadowCol);
+                Text(dl, font, modSize, new Vector2(x, pos.Y), mod, textCol, outlineCol);
                 x += ImGui.CalcTextSize(mod).X * (modSize / baseSize) + 1f;
             }
-            Text(dl, font, btnSize, new Vector2(x, pos.Y), btn, textCol, shadowCol);
+            Text(dl, font, btnSize, new Vector2(x, pos.Y), btn, textCol, outlineCol);
             pos.Y += lineH;
         }
     }
 
+    // 8-direction black outline + solid fill — legible over bright ability icons.
     private static void Text(ImDrawListPtr dl, ImFontPtr font, float size, Vector2 pos,
-        string s, uint col, uint shadow)
+        string s, uint col, uint outline)
     {
-        dl.AddText(font, size, pos + new Vector2(1f, 1f), shadow, s);
+        for (var dx = -1; dx <= 1; dx++)
+            for (var dy = -1; dy <= 1; dy++)
+                if (dx != 0 || dy != 0)
+                    dl.AddText(font, size, pos + new Vector2(dx, dy), outline, s);
         dl.AddText(font, size, pos, col, s);
     }
 
