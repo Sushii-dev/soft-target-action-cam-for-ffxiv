@@ -734,7 +734,7 @@ public sealed class ConfigWindow : Window, IDisposable
             Config.ShowMouseBindHints = showHints;
             Config.Save();
         }
-        ImGui.TextDisabled("  Overlays the bind (e.g. M1, S+M2) in the corner of each bound slot,");
+        ImGui.TextDisabled("  Overlays the bind (e.g. RMB, ↑LMB) in the corner of each bound slot,");
         ImGui.TextDisabled("  like the game's own keybind hints. Display only — never alters keybinds.");
 
         ImGui.BeginDisabled(!Config.ShowMouseBindHints);

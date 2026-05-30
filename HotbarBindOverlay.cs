@@ -143,18 +143,20 @@ public sealed unsafe class HotbarBindOverlay
     {
         var btn = b.Button switch
         {
-            VirtualKey.LBUTTON  => "M1",
-            VirtualKey.RBUTTON  => "M2",
-            VirtualKey.MBUTTON  => "M3",
-            VirtualKey.XBUTTON1 => "M4",
-            VirtualKey.XBUTTON2 => "M5",
+            VirtualKey.LBUTTON  => "LMB",
+            VirtualKey.RBUTTON  => "RMB",
+            VirtualKey.MBUTTON  => "MMB",
+            VirtualKey.XBUTTON1 => "MB4",
+            VirtualKey.XBUTTON2 => "MB5",
             _                   => b.Button.ToString(),
         };
+        // Match the game's native keybind-hint modifier glyphs: an up-arrow for
+        // Shift, a capital letter for Ctrl / Alt.
         var mod = b.Modifier switch
         {
-            MouseBindModifier.Shift => "S+",
-            MouseBindModifier.Ctrl  => "C+",
-            MouseBindModifier.Alt   => "A+",
+            MouseBindModifier.Shift => "↑", // ↑
+            MouseBindModifier.Ctrl  => "C",
+            MouseBindModifier.Alt   => "A",
             _                       => string.Empty,
         };
         return mod + btn;
