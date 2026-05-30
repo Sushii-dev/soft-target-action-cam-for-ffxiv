@@ -38,34 +38,28 @@ internal static unsafe class HotbarFirer
     public const uint MaxSlotId = 15;
 
     /// <summary>
-    /// Sentinel "no target / let the game auto-resolve" id used by
-    /// <see cref="ActionManager.UseAction"/>. Lower 32 bits = uint.MaxValue
-    /// masked off — matches FFXIVClientStructs' default.
-    /// </summary>
-    private const ulong EmptyTargetId = 0xE000_0000UL;
-
-    /// <summary>
-    /// Try to fire the slot at <paramref name="hotbarId"/> / <paramref name="slotId"/>.
-    /// Returns true if the game accepted the call (i.e. an action was
-    /// invoked); false if the bar/slot is out of range, empty, or the
-    /// resolved action is on cooldown / unusable right now.
+    /// Fire the slot at <paramref name="hotbarId"/> / <paramref name="slotId"/>
+    /// exactly like a native hotbar keypress, via
+    /// <see cref="RaptureHotbarModule.ExecuteSlotById"/>. Returns false only
+    /// when the bar/slot is out of range or empty.
     ///
-    /// For <c>Action</c> / <c>CraftAction</c> slots with a resolvable
-    /// target (hard target preferred, soft target fallback), this calls
-    /// <see cref="ActionManager.UseAction"/> directly with the explicit
-    /// target id. That bypasses the game's soft→hard promotion path —
-    /// promotion was previously rejected by <c>HardTargetSuppressor</c>
-    /// but the brief promotion still fired UI cues (re-highlight
-    /// animation + click SFX) that the user perceived as the soft-target
-    /// reticle "reattaching" on every bound fire (v0.6.0 playtest).
-    /// Pre-resolving the target avoids the promotion path entirely.
+    /// ExecuteSlotById is the literal keyboard-hotkey path, so every slot
+    /// kind behaves identically to pressing the key: instants fire, cast-
+    /// time abilities INITIATE their cast (the v0.6.37 bug — the old
+    /// UseAction-explicit-target route failed to start casts), the native
+    /// input QUEUE buffers a press in the GCD/anim-lock tail, hold-to-
+    /// repeat re-fires each frame with the game's own rate-limiting (no
+    /// toast spam), and the action targets the soft/hard target per the
+    /// game's normal rules. Macro / Item / GeneralAction / PetAction /
+    /// area-targeted ground reticle all dispatch correctly, and ReAction /
+    /// MOAction / Redirect layer on top.
     ///
-    /// All other slot types — including Action with no resolvable target
-    /// — go through <see cref="RaptureHotbarModule.ExecuteSlotById"/>, the
-    /// same path the game drives from a keyboard hotkey, so Macro / Item
-    /// / GeneralAction / PetAction / area-targeted ground reticle / etc.
-    /// dispatch correctly and any plugin that hooks the slot path
-    /// (ReAction, MOAction, Redirect) layers on top automatically.
+    /// The soft→hard promotion that this path triggers (and its reticle
+    /// pulse + acquire sound — the reason v0.6.2 detoured to UseAction) is
+    /// now neutralised fire-path-agnostically by SoftTargetGuard (+0x88
+    /// re-pin in HandleTargetingKeybinds), MouseOverSuppressor,
+    /// SoundSuppressor, and HardTargetSuppressor — so the detour is no
+    /// longer needed, and dropping it is what lets casts initiate.
     /// </summary>
     public static bool Fire(uint hotbarId, uint slotId)
     {
@@ -78,77 +72,12 @@ internal static unsafe class HotbarFirer
         var slot = module->GetSlotById(hotbarId, slotId);
         if (slot == null) return false;
 
-        // Empty slot — no command bound. Don't waste the fire / risk a
-        // game-side complaint.
+        // Empty slot — nothing bound.
         if (slot->CommandType == RaptureHotbarModule.HotbarSlotType.Empty)
             return false;
 
-        var am = ActionManager.Instance();
-        if (am == null) return false;
-
-        var t = slot->CommandType;
-        if (t == RaptureHotbarModule.HotbarSlotType.Action ||
-            t == RaptureHotbarModule.HotbarSlotType.CraftAction)
-        {
-            var targetId = ResolveExplicitTarget();
-            if (targetId != EmptyTargetId)
-            {
-                // Queueable gate. checkRecastActive: false so a rolling GCD
-                // still reads as usable (0) and the press flows to UseAction,
-                // which native-queues it to fire when the GCD clears — the
-                // v0.6.24 responsiveness fix.
-                //
-                // checkCastingActive: TRUE (v0.6.37) — block re-fire while a
-                // CAST is in progress. Hold-to-repeat calls this every frame;
-                // with the casting check off, a cast-time ability (e.g. some
-                // SMN spells) got hammered by UseAction during its cast bar
-                // and never landed. Casting-active only blocks the moment a
-                // cast bar is up — instant abilities never trip it, and
-                // GCD-tail queueing (recast) is unaffected, so this keeps
-                // responsiveness while letting casts complete.
-                if (am->GetActionStatus(ActionType.Action, slot->CommandId, targetId,
-                        checkRecastActive: false, checkCastingActive: true) != 0)
-                    return false;
-
-                // Direct fire with explicit target, native mode (default).
-                // Native mode = real-keypress semantics: fires now if ready,
-                // auto-queues if within the GCD/anim-lock window. Explicit
-                // target avoids slot re-resolution → no soft→hard promotion.
-                return am->UseAction(ActionType.Action, slot->CommandId, targetId);
-            }
-
-            // No target resolvable — fall through to ExecuteSlotById so
-            // area-targeted (ground reticle) actions get their normal
-            // null-target dispatch. ExecuteSlotById is the keypress path
-            // and native-queues too.
-        }
-        else if (t == RaptureHotbarModule.HotbarSlotType.Item)
-        {
-            // Same queueable gate for items (cooldown ignored). Items
-            // largely don't participate in the GCD queue, but matching
-            // native keypress behaviour via ExecuteSlotById below is
-            // correct either way.
-            if (am->GetActionStatus(ActionType.Item, slot->CommandId, EmptyTargetId,
-                    checkRecastActive: false, checkCastingActive: true) != 0)
-                return false;
-        }
-
         module->ExecuteSlotById(hotbarId, slotId);
         return true;
-    }
-
-    /// <summary>
-    /// Resolve the player's currently-intended target for an action fire.
-    /// Mirrors FFXIV's own priority (hard target wins; soft target falls
-    /// back). Returns <see cref="EmptyTargetId"/> when nothing is
-    /// targeted — the caller treats that as "let the game decide" and
-    /// falls back to <c>ExecuteSlotById</c>.
-    /// </summary>
-    private static ulong ResolveExplicitTarget()
-    {
-        var tm = Plugin.TargetManager;
-        var t = tm.Target ?? tm.SoftTarget;
-        return t?.GameObjectId ?? EmptyTargetId;
     }
 
     /// <summary>

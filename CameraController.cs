@@ -58,6 +58,17 @@ public sealed unsafe class CameraController : IDisposable
     private readonly Configuration config;
     private readonly TargetSelector targetSelector;
 
+    // Last raw cursor read (pre-warp). XWayland can return a STALE frozen
+    // cursor position after a click until the next input event flushes its
+    // cache; the absolute delta (cursor - screenCenter) then stays a
+    // constant nonzero every frame and the camera drifts (continues even
+    // after the button is released, until the next click flushes the
+    // cache). A stale read is byte-identical frame to frame, whereas real
+    // mouselook always jitters, so we skip rotation on an unchanged read —
+    // killing the drift at the cost of at most one tiny frame on the stuck
+    // transition.
+    private POINT lastRawCur;
+
     private bool isActive;
     private bool cursorHidden;
     private POINT screenCenter;
@@ -141,6 +152,7 @@ public sealed unsafe class CameraController : IDisposable
             SetCursorPos(screenCenter.X, screenCenter.Y);
         }
 
+        lastRawCur = screenCenter;
         firstMotionAfterActivate = true;
         framesSinceFirstMotion = 0;
         isActive = true;
@@ -290,6 +302,8 @@ public sealed unsafe class CameraController : IDisposable
             if (config.AutoTarget) targetSelector.Update(hrot);
             // Character rotation is driven by RotationDriver each frame; no
             // per-handler call needed here.
+            GetCursorPos(out var yc);
+            lastRawCur = yc;
             firstMotionAfterActivate = true;
             framesSinceFirstMotion = 0;
             return;
@@ -297,6 +311,12 @@ public sealed unsafe class CameraController : IDisposable
 
         // Read & reset mouse position each frame.
         GetCursorPos(out var cur);
+        // A STALE (XWayland-frozen) read returns the same value every frame;
+        // real mouse motion always jitters. If the read is unchanged, treat
+        // any (cursor - centre) offset as a stale residual, not input, and
+        // skip rotation — this kills the post-click camera drift.
+        var moved = cur.X != lastRawCur.X || cur.Y != lastRawCur.Y;
+        lastRawCur = cur;
         var rawDx = cur.X - screenCenter.X;
         var rawDy = cur.Y - screenCenter.Y;
         var dx = rawDx * config.MouseSensitivityX;
@@ -328,7 +348,8 @@ public sealed unsafe class CameraController : IDisposable
             return;
         }
 
-        ApplyCameraRotation(dx, dy);
+        if (moved)
+            ApplyCameraRotation(dx, dy);
 
         if (config.AutoTarget)
             targetSelector.Update(GetCameraHRotation());
