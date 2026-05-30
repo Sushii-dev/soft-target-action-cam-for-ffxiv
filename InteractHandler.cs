@@ -450,29 +450,19 @@ internal sealed unsafe class InteractHandler
     }
 
     /// <summary>
-    /// Fire /ridepillion at the given party member. Prefers the party-slot
-    /// placeholder (&lt;1&gt;..&lt;8&gt;) so we don't disturb the player's
-    /// hard target; falls back to setting the target + &lt;t&gt;. Returns
-    /// false if the member couldn't be located in the party list.
+    /// Fire /ridepillion at the given party member. The numeric party-slot
+    /// placeholder (&lt;1&gt;..&lt;8&gt;) does NOT expand through
+    /// ProcessChatBoxEntry — it reaches the game as a literal name
+    /// ("<1>" is not a valid target name). The reliable route is the
+    /// &lt;t&gt; (current target) placeholder, so set the member as the
+    /// hard target first, then /ridepillion &lt;t&gt;. Targeting the ally
+    /// you're about to mount with is expected/harmless.
     /// </summary>
     private static bool RidePillion(IGameObject pc)
     {
-        var slot = PartySlotOf(pc);
-        if (slot <= 0) return false;
-        SendGameCommand($"/ridepillion <{slot}>");
+        Plugin.TargetManager.Target = pc;
+        SendGameCommand("/ridepillion <t>");
         return true;
-    }
-
-    private static int PartySlotOf(IGameObject obj)
-    {
-        var i = 0;
-        foreach (var m in Plugin.PartyList)
-        {
-            i++; // party placeholders are 1-based
-            if (m.GameObject != null && m.GameObject.GameObjectId == obj.GameObjectId)
-                return i;
-        }
-        return 0;
     }
 
     /// <summary>
