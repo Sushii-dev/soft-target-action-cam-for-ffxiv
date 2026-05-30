@@ -93,21 +93,21 @@ internal static unsafe class HotbarFirer
             var targetId = ResolveExplicitTarget();
             if (targetId != EmptyTargetId)
             {
-                // Queueable gate (v0.6.24): check status with cooldown
-                // checks DISABLED. A rolling GCD / active cast then reads
-                // as usable (0), so the press flows through to UseAction —
-                // which, in native mode, auto-queues it to fire the instant
-                // the GCD clears, exactly like a real keybind. Only truly-
-                // unusable presses (no/invalid target, out of range, wrong
-                // job, not enough resources) return non-zero and are
-                // dropped, keeping "Unable to use that action now" toasts
-                // rare. Edge-fire means at most one toast per press.
+                // Queueable gate. checkRecastActive: false so a rolling GCD
+                // still reads as usable (0) and the press flows to UseAction,
+                // which native-queues it to fire when the GCD clears — the
+                // v0.6.24 responsiveness fix.
                 //
-                // Previously this gate used the default checkRecastActive:
-                // true, which aborted during the GCD tail and prevented
-                // queueing — the felt unresponsiveness vs native binds.
+                // checkCastingActive: TRUE (v0.6.37) — block re-fire while a
+                // CAST is in progress. Hold-to-repeat calls this every frame;
+                // with the casting check off, a cast-time ability (e.g. some
+                // SMN spells) got hammered by UseAction during its cast bar
+                // and never landed. Casting-active only blocks the moment a
+                // cast bar is up — instant abilities never trip it, and
+                // GCD-tail queueing (recast) is unaffected, so this keeps
+                // responsiveness while letting casts complete.
                 if (am->GetActionStatus(ActionType.Action, slot->CommandId, targetId,
-                        checkRecastActive: false, checkCastingActive: false) != 0)
+                        checkRecastActive: false, checkCastingActive: true) != 0)
                     return false;
 
                 // Direct fire with explicit target, native mode (default).
@@ -129,7 +129,7 @@ internal static unsafe class HotbarFirer
             // native keypress behaviour via ExecuteSlotById below is
             // correct either way.
             if (am->GetActionStatus(ActionType.Item, slot->CommandId, EmptyTargetId,
-                    checkRecastActive: false, checkCastingActive: false) != 0)
+                    checkRecastActive: false, checkCastingActive: true) != 0)
                 return false;
         }
 
