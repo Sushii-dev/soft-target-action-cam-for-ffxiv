@@ -124,7 +124,18 @@ internal sealed class MouseBindController
             // to something else after our pre-snapshot, leave it alone.
             var preSoft = Plugin.TargetManager.SoftTarget;
 
-            HotbarFirer.Fire(bind.HotbarId, bind.SlotId);
+            // Mark the fire window so SoundSuppressor / LogMessageSuppressor
+            // swallow the synchronous activation-click + the no-target error
+            // beep & text. try/finally so a throw can't leave it stuck on.
+            Plugin.MouseBindFireInProgress = true;
+            try
+            {
+                HotbarFirer.Fire(bind.HotbarId, bind.SlotId);
+            }
+            finally
+            {
+                Plugin.MouseBindFireInProgress = false;
+            }
 
             if (preSoft != null)
             {

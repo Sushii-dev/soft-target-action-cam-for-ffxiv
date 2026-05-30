@@ -50,7 +50,18 @@ public sealed class Plugin : IDalamudPlugin
     private readonly InputStatusSuppressor inputStatusSuppressor;
     private readonly SoftTargetGuard softTargetGuard;
     private readonly SoundSuppressor soundSuppressor;
+    private readonly LogMessageSuppressor logMessageSuppressor;
     private readonly LootRoller lootRoller;
+
+    /// <summary>
+    /// Set true for the exact duration of a mouse-bind ExecuteSlotById call.
+    /// SoundSuppressor and LogMessageSuppressor read it to swallow the error
+    /// beep + "Invalid target" text that the game emits synchronously inside
+    /// that call when the bound action has no valid target / is out of range,
+    /// and the per-fire hotbar-activation click that's distracting on hold-
+    /// repeat. Scoped this tightly so nothing outside our own fire is touched.
+    /// </summary>
+    internal static bool MouseBindFireInProgress;
 
     // True when the user explicitly engaged the cam via the activation key.
     // This is intent only — actual cam state mirrors cursor visibility (so
@@ -172,6 +183,11 @@ public sealed class Plugin : IDalamudPlugin
                   && Configuration.MutedSoftTargetSoundIds.Contains(id),
             () => debugOverlay != null && debugOverlay.Enabled);
 
+        // Drops the action-error text ("Invalid target." etc.) during the
+        // synchronous window of a mouse-bind fire. Pairs with SoundSuppressor's
+        // fire-window beep/click drop.
+        logMessageSuppressor = new LogMessageSuppressor();
+
         lootRoller = new LootRoller();
 
         debugOverlay = new DebugOverlay(
@@ -231,6 +247,7 @@ public sealed class Plugin : IDalamudPlugin
         inputStatusSuppressor.Dispose();
         softTargetGuard.Dispose();
         soundSuppressor.Dispose();
+        logMessageSuppressor.Dispose();
         cameraController.Dispose();
     }
 

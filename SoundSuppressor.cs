@@ -68,6 +68,24 @@ internal sealed unsafe class SoundSuppressor : IDisposable
         CallCount++;
         LastId = soundIdx;
 
+        // Mouse-bind fire window: the only sounds emitted synchronously inside
+        // ExecuteSlotById are the hotbar-activation click (distracting on hold-
+        // repeat) and, on a no-target / out-of-range press, the error beep. The
+        // action's own SFX (cast whoosh, weaponskill impact) come from the
+        // animation/VFX system on later frames, OUTSIDE this window, so dropping
+        // everything here silences exactly the two feedback sounds the user
+        // asked to mute and nothing else.
+        if (Plugin.MouseBindFireInProgress)
+        {
+            if (shouldLog())
+            {
+                var fp = path != null ? Marshal.PtrToStringAnsi((nint)path) ?? "" : "";
+                Plugin.Log.Information($"[Veiled] InitSound (fire-window) idx={soundIdx} cat={category} path={fp}");
+            }
+            SuppressedCount++;
+            return nint.Zero;
+        }
+
         if (isCamActive())
         {
             LastIdInCam = soundIdx;
