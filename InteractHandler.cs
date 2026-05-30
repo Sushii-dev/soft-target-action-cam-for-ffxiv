@@ -97,7 +97,11 @@ internal sealed unsafe class InteractHandler
         // prompt still wins.
         if (IsLocalPlayerMounted())
         {
-            SendGameCommand("/dismount");
+            // Dismount = GeneralAction 23 (verified; /dismount is not a real
+            // command). No-op if not mounted; we already gated on mounted.
+            var am = FFXIVClientStructs.FFXIV.Client.Game.ActionManager.Instance();
+            if (am != null)
+                am->UseAction(FFXIVClientStructs.FFXIV.Client.Game.ActionType.GeneralAction, 23);
             return InteractResult.InteractedWithTarget;
         }
 
