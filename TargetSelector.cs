@@ -32,13 +32,27 @@ public sealed unsafe class TargetSelector
     private bool wasPausedByHardTarget;
 
     // Exposed for HardTargetSuppressor + SoftTargetGuard: address of the cone's
-    // current pick, or 0. IsValid() gated — SoftTargetGuard writes this raw into
-    // TargetSystem.SoftTarget every frame, so a stale (despawned) address here is
-    // a use-after-free the moment a targeting Agent reads SoftTarget. Returning 0
-    // for an invalidated pick makes the guard skip the write.
-    public nint CachedBestAddress => (cachedBest != null && cachedBest.IsValid())
-        ? cachedBest.Address
+    // current pick, or 0. Gated by IsWritableTarget — SoftTargetGuard writes this
+    // raw into TargetSystem.SoftTarget every frame, so a stale OR dead actor here
+    // is a use-after-free the moment a targeting Agent reads SoftTarget.
+    public nint CachedBestAddress => IsWritableTarget(cachedBest)
+        ? cachedBest!.Address
         : nint.Zero;
+
+    /// <summary>
+    /// A target is safe to write into the game's SoftTarget / MouseOverTarget
+    /// pointer fields only while it is live AND not dead. The crash class this
+    /// guards: an AOE drops a pack to 0 HP, the game tears those actors down,
+    /// but we keep pinning a dead enemy's pointer (esp. SoftTargetGuard's
+    /// per-frame re-pin) — racing the cleanup so the targeting Agents deref freed
+    /// memory and crash deep in Agent::Update. CurrentHp == 0 flips at death,
+    /// before the actor is freed, giving us a frame to stop writing and let the
+    /// game clear the field itself.
+    /// </summary>
+    public static bool IsWritableTarget(IGameObject? o)
+        => o != null
+           && o.IsValid()
+           && !(o is IBattleChara bc && bc.CurrentHp == 0);
 
     // Exposed for the manual hard-target key. Null when no valid candidate.
     public IGameObject? CachedBest => cachedBest;
@@ -117,7 +131,7 @@ public sealed unsafe class TargetSelector
             // ObjectTable snapshot lags a same-frame free). Writing its address to
             // MouseOverTarget or calling Highlight() (a vfunc) on freed memory is a
             // use-after-free crash. Treat invalid as null → clear, no vfunc call.
-            var valid = cachedBest != null && cachedBest.IsValid();
+            var valid = IsWritableTarget(cachedBest);
             var go = valid
                 ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)cachedBest!.Address
                 : null;
@@ -175,8 +189,8 @@ public sealed unsafe class TargetSelector
         // use-after-free that crashes deep in Agent::Update, far from our code.
         // IsValid() re-checks the object is still live this frame; if not, clear
         // SoftTarget rather than point it at freed memory.
-        ts->SoftTarget = obj != null && obj.IsValid()
-            ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address
+        ts->SoftTarget = IsWritableTarget(obj)
+            ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj!.Address
             : null;
     }
 

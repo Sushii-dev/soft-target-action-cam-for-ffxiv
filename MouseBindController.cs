@@ -143,10 +143,10 @@ internal sealed class MouseBindController
             // SoftTarget is a use-after-free that crashes in the game's Agent
             // update. IsValid() re-checks liveness; DirectSetSoftTarget guards
             // again. If it despawned, leave whatever the game left.
-            if (preSoft != null && preSoft.IsValid())
+            if (TargetSelector.IsWritableTarget(preSoft))
             {
                 var postSoft = Plugin.TargetManager.SoftTarget;
-                if (postSoft?.GameObjectId != preSoft.GameObjectId)
+                if (postSoft?.GameObjectId != preSoft!.GameObjectId)
                     TargetSelector.DirectSetSoftTarget(preSoft);
             }
         }
