@@ -111,26 +111,41 @@ public sealed unsafe class HotbarBindOverlay
 
         var font     = ImGui.GetFont();
         var baseSize = ImGui.GetFontSize();
-        // Full base size at 1.0 HUD scale (matches native hint size); clamp so
-        // small bars stay legible and large bars don't overflow the slot.
-        var btnSize  = MathClamp(baseSize * scale, 11f, baseSize);
-        var modSize  = btnSize * 0.75f;
+        // A touch smaller than native so the wider labels (↑LMB, ALMB) fit the
+        // slot; clamp so small bars stay legible.
+        var btnSize  = MathClamp(baseSize * scale * 0.8f, 9f, baseSize);
+        var modSize  = btnSize * 0.72f;
+        var modGap   = 1f;
 
-        // Flush top-left, tiny inset so the outline doesn't clip the slot edge.
-        var pos    = new Vector2(node->ScreenX + 1f, node->ScreenY + 1f);
-        var lineH  = btnSize + 1f;
+        // Flush to the slot's true top-left edge.
+        var slotLeft  = node->ScreenX;
+        var slotRight = node->ScreenX + node->Width * scale;
+        var top       = node->ScreenY;
+        var lineH     = btnSize + 1f;
 
+        var y = top;
         foreach (var (mod, btn) in binds)
         {
-            var x = pos.X;
+            var modW = mod.Length > 0
+                ? ImGui.CalcTextSize(mod).X * (modSize / baseSize) + modGap
+                : 0f;
+            var btnW   = ImGui.CalcTextSize(btn).X * (btnSize / baseSize);
+            var lineW  = modW + btnW;
+
+            // Left-align to the slot edge, but if the line is wider than the slot
+            // push it LEFT so its right edge sits at the slot edge — leaking left
+            // is fine, leaking right is not.
+            var x = slotLeft;
+            if (x + lineW > slotRight)
+                x = slotRight - lineW;
+
             if (mod.Length > 0)
             {
-                // Smaller, top-aligned (slightly raised) modifier prefix.
-                Text(dl, font, modSize, new Vector2(x, pos.Y), mod, textCol, outlineCol);
-                x += ImGui.CalcTextSize(mod).X * (modSize / baseSize) + 1f;
+                Text(dl, font, modSize, new Vector2(x, y), mod, textCol, outlineCol);
+                x += modW;
             }
-            Text(dl, font, btnSize, new Vector2(x, pos.Y), btn, textCol, outlineCol);
-            pos.Y += lineH;
+            Text(dl, font, btnSize, new Vector2(x, y), btn, textCol, outlineCol);
+            y += lineH;
         }
     }
 
