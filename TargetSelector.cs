@@ -31,8 +31,14 @@ public sealed unsafe class TargetSelector
     // exactly once at the transition, rather than every frame while paused.
     private bool wasPausedByHardTarget;
 
-    // Exposed for HardTargetSuppressor: address of the cone's current pick, or 0.
-    public nint CachedBestAddress => cachedBest?.Address ?? nint.Zero;
+    // Exposed for HardTargetSuppressor + SoftTargetGuard: address of the cone's
+    // current pick, or 0. IsValid() gated — SoftTargetGuard writes this raw into
+    // TargetSystem.SoftTarget every frame, so a stale (despawned) address here is
+    // a use-after-free the moment a targeting Agent reads SoftTarget. Returning 0
+    // for an invalidated pick makes the guard skip the write.
+    public nint CachedBestAddress => (cachedBest != null && cachedBest.IsValid())
+        ? cachedBest.Address
+        : nint.Zero;
 
     // Exposed for the manual hard-target key. Null when no valid candidate.
     public IGameObject? CachedBest => cachedBest;
@@ -107,10 +113,15 @@ public sealed unsafe class TargetSelector
             // painted manually, so we have to reset the previous target's
             // color ourselves whenever the cone pick changes (or empties).
             var ts = FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance();
-            var go = cachedBest != null
-                ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)cachedBest.Address
+            // IsValid() gate: cachedBest can be a despawned actor (the cone scan's
+            // ObjectTable snapshot lags a same-frame free). Writing its address to
+            // MouseOverTarget or calling Highlight() (a vfunc) on freed memory is a
+            // use-after-free crash. Treat invalid as null → clear, no vfunc call.
+            var valid = cachedBest != null && cachedBest.IsValid();
+            var go = valid
+                ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)cachedBest!.Address
                 : null;
-            var curId = cachedBest?.GameObjectId ?? 0ul;
+            var curId = valid ? cachedBest!.GameObjectId : 0ul;
             if (lastHighlightedId != 0 && lastHighlightedId != curId)
                 ResetHighlight(lastHighlightedId);
             ts->MouseOverTarget = go;
