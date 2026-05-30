@@ -642,7 +642,7 @@ public sealed class Plugin : IDalamudPlugin
     /// </summary>
     private static unsafe bool IsGatheringUiOpen()
     {
-        if (Condition[ConditionFlag.Gathering] || Condition[ConditionFlag.Gathering42])
+        if (Condition[ConditionFlag.Gathering])
             return true;
         return IsAddonVisible("Gathering") || IsAddonVisible("GatheringMasterpiece");
     }
