@@ -291,6 +291,18 @@ public class Configuration : IPluginConfiguration
 
     public List<MouseBind> MouseBinds { get; set; } = new();
 
+    // --- Mouse-bind hotbar hints (v0.6.45) ---
+    //
+    // Overlay a small label ("M1", "S+M2") on each hotbar slot that a mouse
+    // bind targets, mirroring the game's own keybind text so the user can see
+    // at a glance what every bound slot fires on. ImGui foreground overlay —
+    // never touches the native nodes. Gated on BetaMouseBindsEnabled too.
+    public bool ShowMouseBindHints { get; set; } = true;
+
+    // Tint for the hint label. Bright/near-white reads cleanly over the dark
+    // keybind strip on most hotbar themes. Drawn with a black drop-shadow.
+    public System.Numerics.Vector4 MouseBindHintColor { get; set; } = new(1f, 0.95f, 0.55f, 1f);
+
     // --- Soft-target acquire sound mute (v0.6.18) ---
     //
     // Mute the soft-target "acquired" UI sound while the action camera is

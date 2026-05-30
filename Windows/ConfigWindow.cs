@@ -724,6 +724,29 @@ public sealed class ConfigWindow : Window, IDisposable
             Config.Save();
         }
 
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        var showHints = Config.ShowMouseBindHints;
+        if (ImGui.Checkbox("Show bind labels on hotbar slots", ref showHints))
+        {
+            Config.ShowMouseBindHints = showHints;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Overlays the bind (e.g. M1, S+M2) in the corner of each bound slot,");
+        ImGui.TextDisabled("  like the game's own keybind hints. Display only — never alters keybinds.");
+
+        ImGui.BeginDisabled(!Config.ShowMouseBindHints);
+        var hintColor = Config.MouseBindHintColor;
+        if (ImGui.ColorEdit4("Label color", ref hintColor,
+                ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.AlphaPreviewHalf))
+        {
+            Config.MouseBindHintColor = hintColor;
+            Config.Save();
+        }
+        ImGui.EndDisabled();
+
         ImGui.EndDisabled();
     }
 
