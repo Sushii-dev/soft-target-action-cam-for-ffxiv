@@ -125,12 +125,12 @@ public sealed unsafe class HotbarBindOverlay
         var modSize  = btnSize * 0.72f;
         var modGap   = 1f;
 
-        // Slot icon top-left, nudged down a hair to land on the native hint line
-        // (the ControlHintTextNode itself is at the slot BOTTOM, which overshot).
+        // Slot icon top-left, nudged down a hair to land on the native hint line.
+        // 0% read slightly high, 6% overshot low → 3% splits the difference.
         var slotLeft  = node->ScreenX;
         var slotRight = node->ScreenX + node->Width * scale;
         var anchorX   = slotLeft;
-        var top       = node->ScreenY + node->Height * scale * 0.06f;
+        var top       = node->ScreenY + node->Height * scale * 0.03f;
         var lineH     = btnSize + 1f;
 
         var y = top;
