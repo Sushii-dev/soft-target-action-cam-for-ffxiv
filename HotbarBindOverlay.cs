@@ -101,7 +101,8 @@ public sealed unsafe class HotbarBindOverlay
                 if (node == null) continue;
                 if ((node->NodeFlags & NodeFlags.Visible) == 0) continue;
 
-                DrawLabels(dl, node, binds, textCol, outlineCol);
+                DrawLabels(dl, node, binds, textCol, outlineCol,
+                    config.MouseBindHintScale, config.MouseBindHintOffsetX, config.MouseBindHintOffsetY);
             }
         }
     }
@@ -111,7 +112,8 @@ public sealed unsafe class HotbarBindOverlay
     // glyph (↑ / A / C) is drawn smaller than the button text, native-hint style.
     // Multiple binds on one slot stack downward.
     private static void DrawLabels(ImDrawListPtr dl, AtkResNode* node,
-        List<(string Mod, string Btn)> binds, uint textCol, uint outlineCol)
+        List<(string Mod, string Btn)> binds, uint textCol, uint outlineCol,
+        float userScale, float offX, float offY)
     {
         float scale = 1f;
         for (var n = node; n != null; n = n->ParentNode)
@@ -119,18 +121,16 @@ public sealed unsafe class HotbarBindOverlay
 
         var font     = ImGui.GetFont();
         var baseSize = ImGui.GetFontSize();
-        // A touch smaller than native so the wider labels (↑LMB, ALMB) fit the
-        // slot; clamp so small bars stay legible.
-        var btnSize  = MathClamp(baseSize * scale * 0.8f, 9f, baseSize);
+        // Auto HUD-scaled, times the user's scale slider; clamp to a sane range.
+        var btnSize  = MathClamp(baseSize * scale * userScale, 6f, baseSize * 2f);
         var modSize  = btnSize * 0.72f;
         var modGap   = 1f;
 
-        // Slot icon top-left, nudged down a hair to land on the native hint line.
-        // 0% read slightly high, 6% overshot low → 3% splits the difference.
-        var slotLeft  = node->ScreenX;
+        // Slot icon top-left + user offset sliders (screen px).
+        var slotLeft  = node->ScreenX + offX;
         var slotRight = node->ScreenX + node->Width * scale;
         var anchorX   = slotLeft;
-        var top       = node->ScreenY + node->Height * scale * 0.03f;
+        var top       = node->ScreenY + offY;
         var lineH     = btnSize + 1f;
 
         var y = top;

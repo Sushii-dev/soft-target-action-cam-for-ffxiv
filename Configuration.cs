@@ -300,8 +300,15 @@ public class Configuration : IPluginConfiguration
     public bool ShowMouseBindHints { get; set; } = true;
 
     // Tint for the hint label. Bright/near-white reads cleanly over the dark
-    // keybind strip on most hotbar themes. Drawn with a black drop-shadow.
+    // keybind strip on most hotbar themes. Drawn with a black outline.
     public System.Numerics.Vector4 MouseBindHintColor { get; set; } = new(1f, 0.95f, 0.55f, 1f);
+
+    // Fine-tuning for label placement, since the exact native hint position
+    // varies with HUD theme / scale. Scale multiplies the auto HUD-scaled font;
+    // the offsets nudge the anchor in screen pixels (X right, Y down).
+    public float MouseBindHintScale   { get; set; } = 0.8f;
+    public float MouseBindHintOffsetX { get; set; } = 0f;
+    public float MouseBindHintOffsetY { get; set; } = 0f;
 
     // --- Soft-target acquire sound mute (v0.6.18) ---
     //

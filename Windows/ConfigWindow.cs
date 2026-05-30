@@ -745,6 +745,37 @@ public sealed class ConfigWindow : Window, IDisposable
             Config.MouseBindHintColor = hintColor;
             Config.Save();
         }
+
+        ImGui.TextDisabled("  Fine-tune placement to match your HUD theme / scale:");
+
+        var hintScale = Config.MouseBindHintScale;
+        if (ImGui.SliderFloat("Label scale", ref hintScale, 0.4f, 1.6f, "%.2f"))
+        {
+            Config.MouseBindHintScale = hintScale;
+            Config.Save();
+        }
+
+        var offX = Config.MouseBindHintOffsetX;
+        if (ImGui.SliderFloat("Label X offset", ref offX, -30f, 30f, "%.0f"))
+        {
+            Config.MouseBindHintOffsetX = offX;
+            Config.Save();
+        }
+
+        var offY = Config.MouseBindHintOffsetY;
+        if (ImGui.SliderFloat("Label Y offset", ref offY, -30f, 30f, "%.0f"))
+        {
+            Config.MouseBindHintOffsetY = offY;
+            Config.Save();
+        }
+
+        if (ImGui.Button("Reset label placement"))
+        {
+            Config.MouseBindHintScale   = 0.8f;
+            Config.MouseBindHintOffsetX = 0f;
+            Config.MouseBindHintOffsetY = 0f;
+            Config.Save();
+        }
         ImGui.EndDisabled();
 
         ImGui.EndDisabled();
