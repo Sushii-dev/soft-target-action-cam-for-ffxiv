@@ -137,7 +137,13 @@ internal sealed class MouseBindController
                 Plugin.MouseBindFireInProgress = false;
             }
 
-            if (preSoft != null)
+            // Restore the pre-fire soft target only if it's STILL a live object.
+            // Firing can coincide with the target despawning (mob dies, duty
+            // Character Destructor wave); writing a freed pointer back into
+            // SoftTarget is a use-after-free that crashes in the game's Agent
+            // update. IsValid() re-checks liveness; DirectSetSoftTarget guards
+            // again. If it despawned, leave whatever the game left.
+            if (preSoft != null && preSoft.IsValid())
             {
                 var postSoft = Plugin.TargetManager.SoftTarget;
                 if (postSoft?.GameObjectId != preSoft.GameObjectId)

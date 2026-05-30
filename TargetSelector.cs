@@ -156,7 +156,15 @@ public sealed unsafe class TargetSelector
     private static unsafe void DirectSetSoftTarget(
         FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem* ts, IGameObject? obj)
     {
-        ts->SoftTarget = obj != null
+        // CRITICAL: never write a stale actor pointer into SoftTarget. obj.Address
+        // is captured at wrap time; if that actor despawned since (e.g. a mob dies
+        // / the duty's Character Destructor wave fires between our snapshot and this
+        // write), the pointer dangles. The game's targeting Agents read SoftTarget
+        // (+0x88) every tick and dereference it — a freed pointer there is a native
+        // use-after-free that crashes deep in Agent::Update, far from our code.
+        // IsValid() re-checks the object is still live this frame; if not, clear
+        // SoftTarget rather than point it at freed memory.
+        ts->SoftTarget = obj != null && obj.IsValid()
             ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address
             : null;
     }
