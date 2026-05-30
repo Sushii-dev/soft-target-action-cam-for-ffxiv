@@ -101,7 +101,7 @@ public sealed unsafe class HotbarBindOverlay
                 if (node == null) continue;
                 if ((node->NodeFlags & NodeFlags.Visible) == 0) continue;
 
-                DrawLabels(dl, node, slot->ControlHintTextNode, binds, textCol, outlineCol);
+                DrawLabels(dl, node, binds, textCol, outlineCol);
             }
         }
     }
@@ -110,7 +110,7 @@ public sealed unsafe class HotbarBindOverlay
     // background box — outlined text sized to track HUD scale. The modifier
     // glyph (↑ / A / C) is drawn smaller than the button text, native-hint style.
     // Multiple binds on one slot stack downward.
-    private static void DrawLabels(ImDrawListPtr dl, AtkResNode* node, AtkResNode* hintNode,
+    private static void DrawLabels(ImDrawListPtr dl, AtkResNode* node,
         List<(string Mod, string Btn)> binds, uint textCol, uint outlineCol)
     {
         float scale = 1f;
@@ -125,13 +125,12 @@ public sealed unsafe class HotbarBindOverlay
         var modSize  = btnSize * 0.72f;
         var modGap   = 1f;
 
-        // Anchor to the native keybind-hint text node when present (exact same
-        // vertical + left position the game uses for "3 / Q / E"); fall back to
-        // the slot icon's top-left edge if the hint node is missing.
+        // Slot icon top-left, nudged down a hair to land on the native hint line
+        // (the ControlHintTextNode itself is at the slot BOTTOM, which overshot).
         var slotLeft  = node->ScreenX;
         var slotRight = node->ScreenX + node->Width * scale;
-        var anchorX   = hintNode != null ? hintNode->ScreenX : slotLeft;
-        var top       = hintNode != null ? hintNode->ScreenY : node->ScreenY;
+        var anchorX   = slotLeft;
+        var top       = node->ScreenY + node->Height * scale * 0.06f;
         var lineH     = btnSize + 1f;
 
         var y = top;
