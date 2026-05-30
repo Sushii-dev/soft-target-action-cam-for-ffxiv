@@ -50,6 +50,10 @@ public sealed unsafe class HotbarBindOverlay
     private struct SlotLayout
     {
         [FieldOffset(0xB8)] public AtkComponentNode* Icon;
+        // The native keybind-hint text node — we anchor our label to its
+        // ScreenX/Y so it shares the game's exact hint position. Typed as the
+        // base node since we only read transform fields.
+        [FieldOffset(0xC0)] public AtkResNode* ControlHintTextNode;
     }
 
     public HotbarBindOverlay(Configuration config) => this.config = config;
@@ -97,7 +101,7 @@ public sealed unsafe class HotbarBindOverlay
                 if (node == null) continue;
                 if ((node->NodeFlags & NodeFlags.Visible) == 0) continue;
 
-                DrawLabels(dl, node, binds, textCol, outlineCol);
+                DrawLabels(dl, node, slot->ControlHintTextNode, binds, textCol, outlineCol);
             }
         }
     }
@@ -106,7 +110,7 @@ public sealed unsafe class HotbarBindOverlay
     // background box — outlined text sized to track HUD scale. The modifier
     // glyph (↑ / A / C) is drawn smaller than the button text, native-hint style.
     // Multiple binds on one slot stack downward.
-    private static void DrawLabels(ImDrawListPtr dl, AtkResNode* node,
+    private static void DrawLabels(ImDrawListPtr dl, AtkResNode* node, AtkResNode* hintNode,
         List<(string Mod, string Btn)> binds, uint textCol, uint outlineCol)
     {
         float scale = 1f;
@@ -121,10 +125,13 @@ public sealed unsafe class HotbarBindOverlay
         var modSize  = btnSize * 0.72f;
         var modGap   = 1f;
 
-        // Flush to the slot's true top-left edge.
+        // Anchor to the native keybind-hint text node when present (exact same
+        // vertical + left position the game uses for "3 / Q / E"); fall back to
+        // the slot icon's top-left edge if the hint node is missing.
         var slotLeft  = node->ScreenX;
         var slotRight = node->ScreenX + node->Width * scale;
-        var top       = node->ScreenY;
+        var anchorX   = hintNode != null ? hintNode->ScreenX : slotLeft;
+        var top       = hintNode != null ? hintNode->ScreenY : node->ScreenY;
         var lineH     = btnSize + 1f;
 
         var y = top;
@@ -136,10 +143,10 @@ public sealed unsafe class HotbarBindOverlay
             var btnW   = ImGui.CalcTextSize(btn).X * (btnSize / baseSize);
             var lineW  = modW + btnW;
 
-            // Left-align to the slot edge, but if the line is wider than the slot
-            // push it LEFT so its right edge sits at the slot edge — leaking left
-            // is fine, leaking right is not.
-            var x = slotLeft;
+            // Left-align to the native hint position, but if the line is wider
+            // than the slot push it LEFT so its right edge sits at the slot edge
+            // — leaking left is fine, leaking right is not.
+            var x = anchorX;
             if (x + lineW > slotRight)
                 x = slotRight - lineW;
 
