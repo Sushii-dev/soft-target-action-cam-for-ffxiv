@@ -201,6 +201,21 @@ public sealed unsafe class CameraController : IDisposable
     }
 
     /// <summary>
+    /// Warp the OS cursor to a point given in game-client (render) pixel
+    /// coordinates — e.g. an addon's X/Y. Converts to screen space via the
+    /// window's client rect. Used to drop the cursor onto the gathering UI
+    /// when it auto-opens.
+    /// </summary>
+    public void WarpCursorToClient(int clientX, int clientY)
+    {
+        var hwnd = Process.GetCurrentProcess().MainWindowHandle;
+        if (hwnd == IntPtr.Zero) return;
+        var p = new POINT { X = clientX, Y = clientY };
+        ClientToScreen(hwnd, ref p);
+        SetCursorPos(p.X, p.Y);
+    }
+
+    /// <summary>
     /// True iff FFXIV's UI layer considers the cursor visible to the player.
     /// Reads AtkCursor.IsVisible — the same flag SimpleTweaks, Dalamud, and
     /// FFXIV-VR treat as canonical for popups, menus, cutscenes, and our own

@@ -66,6 +66,7 @@ public sealed class Plugin : IDalamudPlugin
     private bool greedRollKeyWasDown;
     private bool passRollKeyWasDown;
     private bool wasExemptedLastTick;
+    private bool gatheringUiWasOpen;
 
     public Plugin()
     {
@@ -264,6 +265,7 @@ public sealed class Plugin : IDalamudPlugin
         HandleInteractKey();
         HandleLootRollKeys();
         ReconcileCursorSync();
+        HandleGatheringCursor();
         cameraController.Update();
         // RotationDriver runs after camera so it reads the freshly-updated yaw.
         rotationDriver.Update();
@@ -421,6 +423,11 @@ public sealed class Plugin : IDalamudPlugin
 
         if (Configuration.AutoResumeAfterZoneTransition
             && Condition[ConditionFlag.BetweenAreas])
+            return true;
+
+        // Gathering window: always defer the cam (independent of AutoResumeAfterUI)
+        // so it auto-resumes the instant the gathering UI closes.
+        if (IsGatheringUiOpen())
             return true;
 
         if (Configuration.AutoResumeAfterUI)
@@ -614,12 +621,75 @@ public sealed class Plugin : IDalamudPlugin
             || Condition[ConditionFlag.BetweenAreas])
             return true;
 
+        // The gathering choice window doesn't set FocusedAddon, so it slips
+        // past the check below — detect it explicitly so the cursor shows
+        // for the (clickable) gathering UI instead of being re-hidden.
+        if (IsGatheringUiOpen()) return true;
+
         // Any interactive window (inventory, character sheet, map, shop, etc.)
         // sets FocusedAddon when open. Null means only the game world is active.
         var stage = AtkStage.Instance();
         if (stage == null) return false;
         var unitManager = (AtkUnitManager*)stage->RaptureAtkUnitManager;
         return unitManager != null && unitManager->FocusedAddon != null;
+    }
+
+    /// <summary>
+    /// True while a gathering interaction UI is up (the node item-pick
+    /// window, or the collectable masterpiece window). Drives both the
+    /// cursor-show (treat as menu) and the auto-resume exemption so the cam
+    /// comes back automatically once gathering finishes.
+    /// </summary>
+    private static unsafe bool IsGatheringUiOpen()
+    {
+        if (Condition[ConditionFlag.Gathering] || Condition[ConditionFlag.Gathering42])
+            return true;
+        return IsAddonVisible("Gathering") || IsAddonVisible("GatheringMasterpiece");
+    }
+
+    private static unsafe bool IsAddonVisible(string name)
+    {
+        var addon = GameGui.GetAddonByName(name, 1);
+        return addon.Address != 0 && ((AtkUnitBase*)addon.Address)->IsVisible;
+    }
+
+    /// <summary>
+    /// On the frame the gathering UI opens, force the cursor visible and warp
+    /// it onto the centre of the gathering window so the user can immediately
+    /// click the item choices. The cam tears down on its own (ReconcileCursorSync
+    /// sees the cursor visible) and auto-resumes once the window closes
+    /// (gathering is an IsCurrentlyExempted condition). Edge-triggered so we
+    /// don't fight the user's cursor while the window stays open.
+    /// </summary>
+    private unsafe void HandleGatheringCursor()
+    {
+        var open = IsGatheringUiOpen();
+        if (open && !gatheringUiWasOpen)
+        {
+            cameraController.RequestShowCursor();
+            if (TryGetGatheringAddonCenter(out var cx, out var cy))
+                cameraController.WarpCursorToClient(cx, cy);
+        }
+        gatheringUiWasOpen = open;
+    }
+
+    /// <summary>Centre of the visible gathering addon in client px.</summary>
+    private static unsafe bool TryGetGatheringAddonCenter(out int cx, out int cy)
+    {
+        cx = cy = 0;
+        foreach (var name in new[] { "Gathering", "GatheringMasterpiece" })
+        {
+            var wrapper = GameGui.GetAddonByName(name, 1);
+            if (wrapper.Address == 0) continue;
+            var addon = (AtkUnitBase*)wrapper.Address;
+            if (!addon->IsVisible) continue;
+            var root = addon->RootNode;
+            if (root == null) continue;
+            cx = (int)(addon->X + root->Width * addon->Scale / 2f);
+            cy = (int)(addon->Y + root->Height * addon->Scale / 2f);
+            return true;
+        }
+        return false;
     }
 
     private void HandleToggleKey(bool menuOpen)
