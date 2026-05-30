@@ -66,7 +66,6 @@ public sealed unsafe class HotbarBindOverlay
         var dl        = ImGui.GetForegroundDrawList();
         var textCol   = ImGui.ColorConvertFloat4ToU32(config.MouseBindHintColor);
         var shadowCol = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.9f));
-        var chipCol   = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.55f));
 
         foreach (var name in ActionBarAddons)
         {
@@ -82,7 +81,7 @@ public sealed unsafe class HotbarBindOverlay
 
             for (int s = 0; s < slotCount; s++)
             {
-                if (!labels.TryGetValue((barId, (uint)s), out var label)) continue;
+                if (!labels.TryGetValue((barId, (uint)s), out var binds)) continue;
 
                 // StdVector<ActionBarSlot>.First strides by the real
                 // ActionBarSlot size; cast the element to our minimal layout.
@@ -94,73 +93,88 @@ public sealed unsafe class HotbarBindOverlay
                 if (node == null) continue;
                 if ((node->NodeFlags & NodeFlags.Visible) == 0) continue;
 
-                DrawLabel(dl, node, label, textCol, shadowCol, chipCol);
+                DrawLabels(dl, node, binds, textCol, shadowCol);
             }
         }
     }
 
-    // Slot screen position comes straight from the node's resolved ScreenX/Y
-    // (already folds in the addon offset + parent transform). Size is the node's
-    // unscaled W/H times the accumulated scale up the parent chain.
-    private static void DrawLabel(ImDrawListPtr dl, AtkResNode* node, string label,
-        uint textCol, uint shadowCol, uint chipCol)
+    // Top-left corner, no background box — just shadowed text, sized to track the
+    // slot's HUD scale. The modifier glyph (↑ / A / C) is drawn smaller than the
+    // button text, mirroring the game's native keybind-hint look. Multiple binds
+    // on one slot stack downward.
+    private static void DrawLabels(ImDrawListPtr dl, AtkResNode* node,
+        List<(string Mod, string Btn)> binds, uint textCol, uint shadowCol)
     {
         float scale = 1f;
         for (var n = node; n != null; n = n->ParentNode)
             scale *= n->ScaleX;
 
-        var origin = new Vector2(node->ScreenX, node->ScreenY);
+        var font     = ImGui.GetFont();
+        var baseSize = ImGui.GetFontSize();
+        // Track HUD scale but stay legible; clamp so tiny bars don't vanish.
+        var btnSize  = MathClamp(baseSize * scale * 0.85f, 10f, baseSize);
+        var modSize  = btnSize * 0.7f;
 
-        var ts  = ImGui.CalcTextSize(label);
-        var pad = new Vector2(3f, 1f);
+        var pos    = new Vector2(node->ScreenX, node->ScreenY) + new Vector2(scale, scale);
+        var lineH  = btnSize + 1f;
 
-        // Top-left corner chip — clear of the centred recast number and the
-        // native keybind hint (bottom), so it never overlaps either.
-        var chipMin = origin + new Vector2(scale, scale);
-        var chipMax = chipMin + ts + pad * 2f;
-        dl.AddRectFilled(chipMin, chipMax, chipCol, 3f);
-
-        var tpos = chipMin + pad;
-        dl.AddText(tpos + new Vector2(1f, 1f), shadowCol, label);
-        dl.AddText(tpos, textCol, label);
+        foreach (var (mod, btn) in binds)
+        {
+            var x = pos.X;
+            if (mod.Length > 0)
+            {
+                // Smaller, top-aligned (slightly raised) modifier prefix.
+                Text(dl, font, modSize, new Vector2(x, pos.Y), mod, textCol, shadowCol);
+                x += ImGui.CalcTextSize(mod).X * (modSize / baseSize) + 1f;
+            }
+            Text(dl, font, btnSize, new Vector2(x, pos.Y), btn, textCol, shadowCol);
+            pos.Y += lineH;
+        }
     }
 
-    private Dictionary<(uint Bar, uint Slot), string> BuildLabelMap()
+    private static void Text(ImDrawListPtr dl, ImFontPtr font, float size, Vector2 pos,
+        string s, uint col, uint shadow)
     {
-        var map = new Dictionary<(uint, uint), string>();
+        dl.AddText(font, size, pos + new Vector2(1f, 1f), shadow, s);
+        dl.AddText(font, size, pos, col, s);
+    }
+
+    private static float MathClamp(float v, float lo, float hi)
+        => v < lo ? lo : v > hi ? hi : v;
+
+    private Dictionary<(uint Bar, uint Slot), List<(string Mod, string Btn)>> BuildLabelMap()
+    {
+        var map = new Dictionary<(uint, uint), List<(string, string)>>();
         foreach (var b in config.MouseBinds)
         {
             if (b == null || b.Button == VirtualKey.NO_KEY) continue;
 
             var key = (b.HotbarId, b.SlotId);
-            var lbl = FormatBind(b);
-            map[key] = map.TryGetValue(key, out var existing) ? existing + "/" + lbl : lbl;
+            if (!map.TryGetValue(key, out var list))
+                map[key] = list = new List<(string, string)>();
+            list.Add((FormatMod(b.Modifier), FormatButton(b.Button)));
         }
         return map;
     }
 
-    private static string FormatBind(MouseBind b)
+    private static string FormatButton(VirtualKey button) => button switch
     {
-        var btn = b.Button switch
-        {
-            VirtualKey.LBUTTON  => "LMB",
-            VirtualKey.RBUTTON  => "RMB",
-            VirtualKey.MBUTTON  => "MMB",
-            VirtualKey.XBUTTON1 => "MB4",
-            VirtualKey.XBUTTON2 => "MB5",
-            _                   => b.Button.ToString(),
-        };
-        // Match the game's native keybind-hint modifier glyphs: an up-arrow for
-        // Shift, a capital letter for Ctrl / Alt.
-        var mod = b.Modifier switch
-        {
-            MouseBindModifier.Shift => "↑", // ↑
-            MouseBindModifier.Ctrl  => "C",
-            MouseBindModifier.Alt   => "A",
-            _                       => string.Empty,
-        };
-        return mod + btn;
-    }
+        VirtualKey.LBUTTON  => "LMB",
+        VirtualKey.RBUTTON  => "RMB",
+        VirtualKey.MBUTTON  => "MMB",
+        VirtualKey.XBUTTON1 => "MB4",
+        VirtualKey.XBUTTON2 => "MB5",
+        _                   => button.ToString(),
+    };
+
+    // Native keybind-hint convention: up-arrow for Shift, capital for Ctrl / Alt.
+    private static string FormatMod(MouseBindModifier mod) => mod switch
+    {
+        MouseBindModifier.Shift => "↑",
+        MouseBindModifier.Ctrl  => "C",
+        MouseBindModifier.Alt   => "A",
+        _                       => string.Empty,
+    };
 
     private static bool IsAddonVisible(string name)
     {
