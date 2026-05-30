@@ -121,10 +121,14 @@ internal sealed unsafe class InteractHandler
                     return InteractResult.ExaminedPlayer;
                 }
 
-                // Non-PC hard target — call InteractWithObject as normal.
+                // Non-PC hard target — interact (kind-aware: nodes need
+                // OpenObjectInteraction).
                 if (dalamudObj == null || dalamudObj.ObjectKind != DalamudObjectKind.Pc)
                 {
-                    ts->InteractWithObject(hardTarget);
+                    if (dalamudObj != null)
+                        InteractWith(ts, dalamudObj);
+                    else
+                        ts->InteractWithObject(hardTarget);
                     return InteractResult.InteractedWithTarget;
                 }
 
@@ -307,8 +311,29 @@ internal sealed unsafe class InteractHandler
         var npc = FindCandidateInCone(IsWorldInteractable);
         if (npc == null) return false;
 
-        ts->InteractWithObject((GameObject*)npc.Address);
+        InteractWith(ts, npc);
         return true;
+    }
+
+    /// <summary>
+    /// Fire the correct interact call for the object's kind. Gathering
+    /// nodes (GatheringPoint) open via <c>OpenObjectInteraction</c> — the
+    /// game's event-handler route that actually starts gathering;
+    /// <c>InteractWithObject</c> only targets a node, it doesn't open it
+    /// (the v0.6.27 gathering bug). Everything else (NPC / EventObj /
+    /// Aetheryte / Treasure) uses InteractWithObject as before.
+    ///
+    /// Neither call auto-paths, so a node only opens when the player is
+    /// already within ~3.5y horizontal / ~3y vertical of it — walk up
+    /// first. The cone can surface the node (indicator) from farther out.
+    /// </summary>
+    private static void InteractWith(TargetSystem* ts, IGameObject obj)
+    {
+        var go = (GameObject*)obj.Address;
+        if (obj.ObjectKind == DalamudObjectKind.GatheringPoint)
+            ts->OpenObjectInteraction(go);
+        else
+            ts->InteractWithObject(go);
     }
 
     /// <summary>
