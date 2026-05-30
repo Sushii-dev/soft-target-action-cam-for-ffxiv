@@ -31,11 +31,15 @@ public sealed unsafe class HotbarBindOverlay
     // Every addon that can host a RaptureHotbar. The live RaptureHotbarId is
     // read off each one, so this is just the set of places to look — not an
     // index map.
+    // Standard hotbars + pet/extra bar only. The cross hotbars are deliberately
+    // excluded: this mod isn't used with a controller, and a cross hotbar set to
+    // SHARE a standard bar reports that bar's RaptureHotbarId, which made the
+    // labels bleed onto the (inactive) cross hotbar.
     private static readonly string[] ActionBarAddons =
     {
         "_ActionBar", "_ActionBar01", "_ActionBar02", "_ActionBar03", "_ActionBar04",
         "_ActionBar05", "_ActionBar06", "_ActionBar07", "_ActionBar08", "_ActionBar09",
-        "_ActionCross", "_ActionDoubleCrossL", "_ActionDoubleCrossR", "_ActionBarEx",
+        "_ActionBarEx",
     };
 
     // Minimal mirror of the per-slot UI struct (FFXIVClientStructs ActionBarSlot,
