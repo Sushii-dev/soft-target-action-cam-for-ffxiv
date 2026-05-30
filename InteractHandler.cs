@@ -90,6 +90,17 @@ internal sealed unsafe class InteractHandler
         // topmost interactive layer.
         if (TryAdvanceDialogue()) return InteractResult.AdvancedDialogue;
 
+        // Mounted → dismount. You can't interact with the world while
+        // mounted anyway, so the interact key doubling as dismount is
+        // natural (and symmetric with ride-pillion: pillion on, press
+        // again to hop off). Runs after dialogue advance so an open
+        // prompt still wins.
+        if (IsLocalPlayerMounted())
+        {
+            SendGameCommand("/dismount");
+            return InteractResult.InteractedWithTarget;
+        }
+
         // Hard-target interact branch with PC awareness. We do this BEFORE the
         // general TryInteractWithTarget cone-scan path so that:
         //   • a hard-targeted PC routes to Examine (when enabled + sheathed),
@@ -439,6 +450,14 @@ internal sealed unsafe class InteractHandler
         if (!IsPartyMember(obj)) return false;
         var chara = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)obj.Address;
         return chara != null && chara->IsMounted();
+    }
+
+    private static bool IsLocalPlayerMounted()
+    {
+        var lp = Plugin.ObjectTable.LocalPlayer;
+        if (lp == null) return false;
+        var c = (FFXIVClientStructs.FFXIV.Client.Game.Character.Character*)lp.Address;
+        return c != null && c->IsMounted();
     }
 
     private static bool IsPartyMember(IGameObject obj)
