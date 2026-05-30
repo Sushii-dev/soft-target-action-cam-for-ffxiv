@@ -84,8 +84,11 @@ public sealed unsafe class HotbarBindOverlay
             {
                 if (!labels.TryGetValue((barId, (uint)s), out var label)) continue;
 
-                var slot = (SlotLayout*)addon->ActionBarSlotVector.GetPointer((ulong)s);
-                if (slot == null) continue;
+                // StdVector<ActionBarSlot>.First strides by the real
+                // ActionBarSlot size; cast the element to our minimal layout.
+                var first = addon->ActionBarSlotVector.First;
+                if (first == null) continue;
+                var slot = (SlotLayout*)(first + s);
 
                 var node = (AtkResNode*)slot->Icon;
                 if (node == null) continue;
