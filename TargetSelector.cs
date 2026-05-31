@@ -251,21 +251,27 @@ public sealed unsafe class TargetSelector
             if (!IsValidTarget(obj, localPlayer, config.RequireAggro)) continue;
 
             var toTarget = obj.Position - playerPos;
-            var distSq = toTarget.LengthSquared();
-            if (distSq > maxDistSq || distSq < 0.01f) continue;
 
-            // Project onto XZ plane (ignore height difference for angle test).
+            // Range + score use HORIZONTAL distance only; a separate vertical cap
+            // handles height. This makes an elevated enemy directly ahead target
+            // exactly like a grounded one (same horizontal range, no distance
+            // penalty for height) — so verticals are reachable without pitching
+            // the camera up. The vertical cap stops the cone reaching a different
+            // floor in multi-level arenas.
+            if (MathF.Abs(toTarget.Y) > config.AutoTargetMaxVertical) continue;
+
             var toTargetXZ = new Vector3(toTarget.X, 0f, toTarget.Z);
-            var len = toTargetXZ.Length();
-            if (len < 0.01f) continue;
+            var horizSq = toTargetXZ.LengthSquared();
+            if (horizSq > maxDistSq || horizSq < 0.01f) continue;
 
+            var len = MathF.Sqrt(horizSq);
             var dot   = Vector3.Dot(toTargetXZ / len, camForward);
             var angle = MathF.Acos(Math.Clamp(dot, -1f, 1f));
             if (angle > maxAngle) continue;
 
             // Score: lower is better. Weight angle heavily so the most
             // centred target wins ties over the closest one.
-            var score = angle * angleW + MathF.Sqrt(distSq) * 0.05f;
+            var score = angle * angleW + len * 0.05f;
             if (score < bestScore)
             {
                 bestScore = score;
@@ -338,6 +344,11 @@ public sealed unsafe class TargetSelector
         if (obj is not IBattleNpc npc || (byte)npc.BattleNpcKind != 5) return false;
         if (npc.CurrentHp == 0) return false;
         if (!obj.IsTargetable) return false;
+        // Never target friendlies (green entities — duty allies, friendly NPCs,
+        // escort targets). The Hostile flag is the game's own enemy/red-nameplate
+        // bit, set for all attackable enemies (incl. passive un-aggroed mobs) and
+        // never for friendlies. Combat targeting must skip anything not hostile.
+        if (!npc.StatusFlags.HasFlag(StatusFlags.Hostile)) return false;
         if (requireAggro && !IsTargetingParty(obj, localPlayer)) return false;
         return true;
     }

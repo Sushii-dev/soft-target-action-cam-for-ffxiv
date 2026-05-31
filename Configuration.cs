@@ -144,6 +144,14 @@ public class Configuration : IPluginConfiguration
     // Maximum range (yalms) to consider auto-target candidates.
     public float AutoTargetMaxDistance { get; set; } = 30f;
 
+    // Maximum vertical (Y) offset, in yalms, a candidate may sit above/below the
+    // player. The cone angle itself is HORIZONTAL only (height ignored), and the
+    // range gate + score use HORIZONTAL distance — so an enemy directly ahead but
+    // elevated targets exactly like one on the ground, no need to pitch the cam
+    // up. This cap is the only vertical limit: keeps the cone from grabbing
+    // something on the floor above/below in multi-level arenas. Generous default.
+    public float AutoTargetMaxVertical { get; set; } = 30f;
+
     // Weight given to angle vs distance when scoring candidates.
     // Higher = prefer more centred targets; lower = prefer closer targets.
     public float AutoTargetAngleWeight { get; set; } = 2.0f;

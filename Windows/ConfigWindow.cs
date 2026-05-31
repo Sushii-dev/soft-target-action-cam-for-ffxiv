@@ -246,6 +246,16 @@ public sealed class ConfigWindow : Window, IDisposable
             Config.AutoTargetMaxDistance = dist;
             Config.Save();
         }
+        ImGui.TextDisabled("  Horizontal range — height is ignored here.");
+
+        var vert = Config.AutoTargetMaxVertical;
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Max vertical (y)", ref vert, 2f, 60f, "%.0fy"))
+        {
+            Config.AutoTargetMaxVertical = vert;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  How far above/below you a target may sit. Higher = grab elevated\n  enemies without aiming up; lower = stay on your own floor.");
 
         var aw = Config.AutoTargetAngleWeight;
         ImGui.SetNextItemWidth(200);

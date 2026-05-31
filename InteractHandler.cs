@@ -473,18 +473,19 @@ internal sealed unsafe class InteractHandler
     }
 
     /// <summary>
-    /// Fire /ridepillion at the given party member. The numeric party-slot
-    /// placeholder (&lt;1&gt;..&lt;8&gt;) does NOT expand through
-    /// ProcessChatBoxEntry — it reaches the game as a literal name
-    /// ("<1>" is not a valid target name). The reliable route is the
-    /// &lt;t&gt; (current target) placeholder, so set the member as the
-    /// hard target first, then /ridepillion &lt;t&gt;. Targeting the ally
-    /// you're about to mount with is expected/harmless.
+    /// Fire /ridepillion at the given party member by NAME — never touches the
+    /// hard target. Earlier versions set the member as hard target and used the
+    /// &lt;t&gt; placeholder (the numeric &lt;1&gt;..&lt;8&gt; slot placeholders
+    /// don't expand through ProcessChatBoxEntry), but that left an unwanted hard
+    /// target on the ally. /ridepillion parses a literal character name the same
+    /// way /target does, so the name resolves the party member without any
+    /// targeting side effect.
     /// </summary>
     private static bool RidePillion(IGameObject pc)
     {
-        Plugin.TargetManager.Target = pc;
-        SendGameCommand("/ridepillion <t>");
+        var name = pc.Name.TextValue;
+        if (string.IsNullOrWhiteSpace(name)) return false;
+        SendGameCommand($"/ridepillion {name}");
         return true;
     }
 
