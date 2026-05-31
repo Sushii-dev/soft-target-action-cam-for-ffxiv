@@ -122,7 +122,7 @@ internal sealed class MouseBindController
             // mid-fire clear / change (null or a different entity than
             // what we held). If the user / another plugin set SoftTarget
             // to something else after our pre-snapshot, leave it alone.
-            var preSoft = Plugin.TargetManager.SoftTarget;
+            var preSoftId = Plugin.TargetManager.SoftTarget?.GameObjectId ?? 0ul;
 
             // Mark the fire window so SoundSuppressor / LogMessageSuppressor
             // swallow the synchronous activation-click + the no-target error
@@ -137,16 +137,18 @@ internal sealed class MouseBindController
                 Plugin.MouseBindFireInProgress = false;
             }
 
-            // Restore the pre-fire soft target only if it's STILL a live object.
+            // Restore the pre-fire soft target only if it's STILL live THIS frame.
             // Firing can coincide with the target despawning (mob dies, duty
             // Character Destructor wave); writing a freed pointer back into
             // SoftTarget is a use-after-free that crashes in the game's Agent
-            // update. IsValid() re-checks liveness; DirectSetSoftTarget guards
-            // again. If it despawned, leave whatever the game left.
-            if (TargetSelector.IsWritableTarget(preSoft))
+            // update. Re-resolve by id against the live object table — never hold
+            // the pre-fire wrapper across the fire. If it despawned (id gone),
+            // ResolveLive returns null and we leave whatever the game left.
+            var preSoft = TargetSelector.ResolveLive(preSoftId);
+            if (preSoft != null)
             {
                 var postSoft = Plugin.TargetManager.SoftTarget;
-                if (postSoft?.GameObjectId != preSoft!.GameObjectId)
+                if (postSoft?.GameObjectId != preSoftId)
                     TargetSelector.DirectSetSoftTarget(preSoft);
             }
         }

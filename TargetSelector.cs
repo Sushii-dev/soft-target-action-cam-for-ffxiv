@@ -22,6 +22,15 @@ public sealed unsafe class TargetSelector
     private const int SoftTargetSuppressWindowMs = 200;
     private int frameCounter = ScanIntervalFrames;
     private IGameObject? cachedBest;
+    // GameObjectId of the cone pick, snapshotted at scan time as a plain value.
+    // The crash class (Agent::Update UAF) came from re-pinning cachedBest's
+    // ADDRESS — a wrapper up to ScanIntervalFrames old — after a Character
+    // Destructor wave freed that actor: IsValid()/CurrentHp then read freed,
+    // possibly-reused memory (garbage HP, false-positive validity) and we
+    // handed the game a dangling pointer. Holding the id as a value lets us
+    // re-resolve against the LIVE object table every frame without ever
+    // dereferencing a stale wrapper.
+    private ulong cachedBestId;
     // Entity whose outline we last painted yellow. Tracked so we can reset its
     // DrawObject.OutlineColor when the cone moves to a different target or empty —
     // the game's own outline updater doesn't clean up direct Highlight() writes.
@@ -35,9 +44,22 @@ public sealed unsafe class TargetSelector
     // current pick, or 0. Gated by IsWritableTarget — SoftTargetGuard writes this
     // raw into TargetSystem.SoftTarget every frame, so a stale OR dead actor here
     // is a use-after-free the moment a targeting Agent reads SoftTarget.
-    public nint CachedBestAddress => IsWritableTarget(cachedBest)
-        ? cachedBest!.Address
-        : nint.Zero;
+    public nint CachedBestAddress => ResolveLive(cachedBestId)?.Address ?? nint.Zero;
+
+    /// <summary>
+    /// Re-resolve the cone pick against the LIVE object table by its
+    /// GameObjectId, returning the object only if it is present THIS frame and
+    /// writable. Never dereferences a cached wrapper's possibly-freed address —
+    /// after a despawn / Character Destructor wave the id is simply gone from
+    /// the table, so this returns null and callers pin null instead of a
+    /// dangling pointer (the Agent::Update use-after-free crash class).
+    /// </summary>
+    public static IGameObject? ResolveLive(ulong id)
+    {
+        if (id == 0 || id == 0xE0000000) return null;
+        var live = Plugin.ObjectTable.SearchById(id);
+        return IsWritableTarget(live) ? live : null;
+    }
 
     /// <summary>
     /// A target is safe to write into the game's SoftTarget / MouseOverTarget
@@ -55,7 +77,16 @@ public sealed unsafe class TargetSelector
            && !(o is IBattleChara bc && bc.CurrentHp == 0);
 
     // Exposed for the manual hard-target key. Null when no valid candidate.
+    // NOTE: this is the raw cached wrapper (up to ScanIntervalFrames old). Use
+    // it ONLY for null checks / read-only intent — NEVER pass its address to a
+    // game target field. For any write path use CachedBestLive, which
+    // re-resolves against the live object table and is dangling-pointer safe.
     public IGameObject? CachedBest => cachedBest;
+
+    // Live-resolved cone pick — the ONLY safe source for writes into the game's
+    // SoftTarget / Target / MouseOverTarget fields. Returns null once the pick
+    // leaves the object table (despawn / Character Destructor wave).
+    public IGameObject? CachedBestLive => ResolveLive(cachedBestId);
 
     private readonly Configuration config;
 
@@ -74,6 +105,7 @@ public sealed unsafe class TargetSelector
         {
             frameCounter = 0;
             cachedBest = FindBestTarget(cameraHRotation, config);
+            cachedBestId = cachedBest?.GameObjectId ?? 0ul;
         }
 
         // Pause writes while a hard target exists (set by Tab, click, our
@@ -127,15 +159,17 @@ public sealed unsafe class TargetSelector
             // painted manually, so we have to reset the previous target's
             // color ourselves whenever the cone pick changes (or empties).
             var ts = FFXIVClientStructs.FFXIV.Client.Game.Control.TargetSystem.Instance();
-            // IsValid() gate: cachedBest can be a despawned actor (the cone scan's
-            // ObjectTable snapshot lags a same-frame free). Writing its address to
-            // MouseOverTarget or calling Highlight() (a vfunc) on freed memory is a
-            // use-after-free crash. Treat invalid as null → clear, no vfunc call.
-            var valid = IsWritableTarget(cachedBest);
-            var go = valid
-                ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)cachedBest!.Address
+            // Re-resolve the pick against the LIVE object table by id. cachedBest
+            // is a wrapper up to ScanIntervalFrames old; its address can point at
+            // a freed/reused actor after a same-frame despawn (Character Destructor
+            // wave). Writing that to MouseOverTarget or calling Highlight() (a
+            // vfunc) on freed memory is the Agent::Update use-after-free crash.
+            // ResolveLive returns null once the id leaves the table → clear instead.
+            var live = ResolveLive(cachedBestId);
+            var go = live != null
+                ? (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)live.Address
                 : null;
-            var curId = valid ? cachedBest!.GameObjectId : 0ul;
+            var curId = live?.GameObjectId ?? 0ul;
             if (lastHighlightedId != 0 && lastHighlightedId != curId)
                 ResetHighlight(lastHighlightedId);
             ts->MouseOverTarget = go;
@@ -159,8 +193,8 @@ public sealed unsafe class TargetSelector
         // directly (same pattern as the MouseOverTarget write above)
         // bypasses the function and keeps the pointer in sync without
         // queueing any UI animation.
-        if (config.WriteSoftTarget) DirectSetSoftTarget(cachedBest);
-        if (config.WriteHardTarget) Plugin.TargetManager.Target = cachedBest;
+        if (config.WriteSoftTarget) DirectSetSoftTarget(ResolveLive(cachedBestId));
+        if (config.WriteHardTarget) Plugin.TargetManager.Target = ResolveLive(cachedBestId);
     }
 
     /// <summary>
@@ -254,6 +288,7 @@ public sealed unsafe class TargetSelector
             lastHighlightedId = 0;
         }
         cachedBest = null;
+        cachedBestId = 0ul;
         wasPausedByHardTarget = false;
     }
 
@@ -277,9 +312,9 @@ public sealed unsafe class TargetSelector
         // Only clear SoftTarget if it still matches our last cone pick — we
         // shouldn't clobber a soft target the user or another plugin set
         // explicitly after we wrote ours.
-        if (cachedBest != null
+        if (cachedBestId != 0ul
             && Plugin.TargetManager.SoftTarget != null
-            && Plugin.TargetManager.SoftTarget.GameObjectId == cachedBest.GameObjectId)
+            && Plugin.TargetManager.SoftTarget.GameObjectId == cachedBestId)
         {
             DirectSetSoftTarget(null);
         }

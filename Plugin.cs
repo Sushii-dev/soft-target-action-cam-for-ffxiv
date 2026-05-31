@@ -512,7 +512,7 @@ public sealed class Plugin : IDalamudPlugin
         // Set branch: cachedBest is only fresh while the camera is active.
         if (!cameraController.IsActive) return;
 
-        var pick = targetSelector.CachedBest;
+        var pick = targetSelector.CachedBestLive;
         if (pick == null) return;
 
         // Bypass the suppression hook for this single SetHardTarget call.
@@ -856,11 +856,13 @@ public sealed class Plugin : IDalamudPlugin
         if (Configuration.BetaMouseBindsEnabled
             && Configuration.WriteSoftTarget
             && cameraController.IsActive
-            && targetSelector.CachedBest != null
             && TargetManager.Target == null)
         {
-            var pick = targetSelector.CachedBest;
-            if (TargetManager.SoftTarget?.GameObjectId != pick.GameObjectId)
+            // CachedBestLive re-resolves against the live object table — a stale
+            // wrapper here (this runs every render frame) would deref freed
+            // memory the instant a Character Destructor wave fires.
+            var pick = targetSelector.CachedBestLive;
+            if (pick != null && TargetManager.SoftTarget?.GameObjectId != pick.GameObjectId)
                 TargetSelector.DirectSetSoftTarget(pick);
         }
 
