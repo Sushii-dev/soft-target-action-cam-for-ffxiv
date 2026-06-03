@@ -30,7 +30,7 @@ internal enum InteractResult
     InteractedWithTarget,
 
     /// <summary>(v0.6.61) A friendly (party/alliance/duty ally/non-hostile
-    /// battle NPC) was hard-targeted as a heal recipient. Plays success sfx.</summary>
+    /// battle NPC) was FOCUS-targeted as a heal recipient. Plays success sfx.</summary>
     TargetedFriendly,
 
     /// <summary>(v0.6.32) Initiated Ride Pillion on a mounted party member.
@@ -50,9 +50,11 @@ internal enum InteractResult
 ///   3. Cone scan for EventNpc / EventObj / Aetheryte (the "world interact"
 ///      kinds — quest givers, vendors, aetherytes, clickable scenery).
 ///   4. (v0.6.61) Cone scan for the nearest FRIENDLY (party / alliance /
-///      duty ally / non-hostile battle NPC) → hard-target it as a heal
+///      duty ally / non-hostile battle NPC) → FOCUS-target it as a heal
 ///      recipient. Gated on <see cref="Configuration.InteractTargetFriendlies"/>.
 ///      Works weapon-drawn so a healer can acquire a heal target mid-fight.
+///      Focus (not hard) keeps the hard target free for enemies; the ReAction
+///      beneficial stack points at Focus Target → Self to land heals.
 ///      Replaced the old player-Examine path (ripped out in v0.6.61).
 ///
 /// Detection / advance patterns adapted from ECommons' AddonMaster files.
@@ -151,20 +153,21 @@ internal sealed unsafe class InteractHandler
         if (pillionPc != null && RidePillion(pillionPc))
             return InteractResult.RodePillion;
 
-        // Last resort: friendly cone scan → hard-target a heal recipient
+        // Last resort: friendly cone scan → FOCUS-target a heal recipient
         // (party / alliance / duty ally / non-hostile battle NPC). Works
-        // weapon-drawn — a healer acquires the heal target mid-fight while
-        // the enemy stays in the soft target for attacks.
+        // weapon-drawn — a healer acquires the heal target mid-fight.
+        //
+        // Focus target (not hard target) on purpose: the hard target stays
+        // free for enemies (e.g. tab/manual enemy hard-target when needed),
+        // and the ReAction beneficial stack points at Focus Target → Self so
+        // heals resolve to this friendly while attacks keep using the enemy
+        // soft/hard target. Focus is the dedicated "second hard target".
         if (config.InteractTargetFriendlies)
         {
             var friendly = FindCandidateInCone(IsFriendlyTarget);
             if (friendly != null)
             {
-                // HardTargetSuppressor only blocks LMB-recency or combat
-                // soft-target promotions — neither applies here, so the
-                // straight assignment passes through cleanly. ITargetManager.Target
-                // routes through SetHardTarget under the hood.
-                Plugin.TargetManager.Target = friendly;
+                Plugin.TargetManager.FocusTarget = friendly;
                 return InteractResult.TargetedFriendly;
             }
         }

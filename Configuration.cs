@@ -256,15 +256,16 @@ public class Configuration : IPluginConfiguration
     // Default 12: neutral tick, not a buzzer. Subtle "nothing happened" cue.
     public uint InteractFailSoundId { get; set; } = 12;
 
-    // --- Friendly hard-target on interact (v0.6.61) ---
+    // --- Friendly focus-target on interact (v0.6.61) ---
     //
-    // When enabled, the interact key hard-targets the nearest friendly in the
+    // When enabled, the interact key FOCUS-targets the nearest friendly in the
     // cone (party / alliance members, duty allies, non-hostile battle NPCs) —
     // as a fallback after the NPC / EventObj / Aetheryte / pillion scan.
-    // Works weapon-drawn (combat) so a healer can grab a heal target mid-fight;
-    // the hard target persists as the heal recipient while the enemy stays in
-    // the soft target for attacks. Replaced the old player-examine path
-    // (v0.6.61 ripped Examine out entirely).
+    // Works weapon-drawn (combat) so a healer can grab a heal target mid-fight.
+    // Focus (not hard) keeps the hard target free for enemies; pair with a
+    // ReAction beneficial stack targeting Focus Target → Self so heals land on
+    // the focus while attacks use the enemy soft/hard target. Replaced the old
+    // player-examine path (v0.6.61 ripped Examine out entirely).
     public bool InteractTargetFriendlies { get; set; } = true;
 
     // --- Loot roll quick-keys (v0.6.28) ---

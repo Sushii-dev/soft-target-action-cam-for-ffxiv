@@ -499,14 +499,15 @@ public sealed class ConfigWindow : Window, IDisposable
 
         // ── Friendly hard-target (heal recipient) ───────────────────────────
         var friendlies = Config.InteractTargetFriendlies;
-        if (ImGui.Checkbox("Interact key hard-targets friendlies (heal target)", ref friendlies))
+        if (ImGui.Checkbox("Interact key focus-targets friendlies (heal target)", ref friendlies))
         {
             Config.InteractTargetFriendlies = friendlies;
             Config.Save();
         }
-        ImGui.TextDisabled("  Fallback after NPCs / objects / aetherytes / pillion. Targets");
+        ImGui.TextDisabled("  Fallback after NPCs / objects / aetherytes / pillion. Focus-targets");
         ImGui.TextDisabled("  party / alliance / duty allies / friendly NPCs. Works in combat");
-        ImGui.TextDisabled("  weapon-out — grab a heal target while the enemy stays soft-targeted.");
+        ImGui.TextDisabled("  weapon-out. Pair with a ReAction beneficial stack → Focus Target");
+        ImGui.TextDisabled("  → Self so heals land on the focus, hard target stays free for enemies.");
 
         ImGui.Spacing();
         ImGui.Separator();
