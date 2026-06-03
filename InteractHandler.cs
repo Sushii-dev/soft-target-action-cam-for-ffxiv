@@ -33,6 +33,10 @@ internal enum InteractResult
     /// battle NPC) was FOCUS-targeted as a heal recipient. Plays success sfx.</summary>
     TargetedFriendly,
 
+    /// <summary>(v0.6.63) The interact-key toggle cleared the active focus
+    /// heal target. Plays success sfx; the friendly indicator returns.</summary>
+    ClearedFocus,
+
     /// <summary>(v0.6.32) Initiated Ride Pillion on a mounted party member.
     /// Plays success sfx.</summary>
     RodePillion,
@@ -127,19 +131,30 @@ internal sealed unsafe class InteractHandler
                 if (dalamudObj != null && IsPillionTarget(dalamudObj) && RidePillion(dalamudObj))
                     return InteractResult.RodePillion;
 
-                // Non-PC hard target — interact (kind-aware: nodes need
-                // OpenObjectInteraction).
-                if (dalamudObj == null || dalamudObj.ObjectKind != DalamudObjectKind.Pc)
+                // Non-PC hard target — interact only if it's actually a
+                // world-interactable kind (NPC / object / aetheryte / coffer /
+                // node). A combat enemy (or any non-interactable) must NOT
+                // swallow the press as a no-op: fall through so the press can
+                // reach the focus toggle (clearing the heal focus while an
+                // enemy is hard-targeted is the common healer case).
+                if (dalamudObj != null && dalamudObj.ObjectKind != DalamudObjectKind.Pc)
                 {
-                    if (dalamudObj != null)
+                    if (IsWorldInteractable(dalamudObj))
+                    {
                         InteractWith(ts, dalamudObj);
-                    else
-                        ts->InteractWithObject(hardTarget);
+                        return InteractResult.InteractedWithTarget;
+                    }
+                    // non-interactable (enemy etc.) → fall through
+                }
+                else if (dalamudObj == null)
+                {
+                    // Object not in the table — keep the legacy raw call.
+                    ts->InteractWithObject(hardTarget);
                     return InteractResult.InteractedWithTarget;
                 }
 
-                // PC hard target — fall through to the cone scan paths so the
-                // keypress isn't silently lost.
+                // PC / non-interactable hard target — fall through to the cone
+                // scan paths so the keypress isn't silently lost.
             }
         }
 
@@ -164,6 +179,17 @@ internal sealed unsafe class InteractHandler
         // soft/hard target. Focus is the dedicated "second hard target".
         if (config.InteractTargetFriendlies)
         {
+            // Toggle: a focus heal target already set → clear it (the
+            // indicator returns on other friendlies). Otherwise acquire the
+            // nearest friendly as the focus. Clearing runs regardless of where
+            // you aim — it's the lowest-priority branch, so dialogue / world-
+            // interact / pillion still win while a focus is held.
+            if (Plugin.TargetManager.FocusTarget != null)
+            {
+                Plugin.TargetManager.FocusTarget = null;
+                return InteractResult.ClearedFocus;
+            }
+
             var friendly = FindCandidateInCone(IsFriendlyTarget);
             if (friendly != null)
             {
@@ -191,7 +217,10 @@ internal sealed unsafe class InteractHandler
         var pillion = FindCandidateInCone(IsPillionTarget);
         if (pillion != null) return pillion;
 
-        if (config.InteractTargetFriendlies)
+        // Suppress the friendly indicator while a focus heal target is held —
+        // the focus is locked in, so highlighting other friendlies is noise.
+        // It returns once the focus is cleared (interact-key toggle).
+        if (config.InteractTargetFriendlies && Plugin.TargetManager.FocusTarget == null)
             return FindCandidateInCone(IsFriendlyTarget);
 
         return null;

@@ -558,6 +558,7 @@ public sealed class Plugin : IDalamudPlugin
         {
             case InteractResult.InteractedWithTarget:
             case InteractResult.TargetedFriendly:
+            case InteractResult.ClearedFocus:
             case InteractResult.RodePillion:
                 Sfx.PlaySuccess(Configuration);
                 break;
