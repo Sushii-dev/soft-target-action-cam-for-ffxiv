@@ -1,11 +1,11 @@
 using System;
 using System.Numerics;
+using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
 using FFXIVClientStructs.FFXIV.Client.Game.Object;
 using FFXIVClientStructs.FFXIV.Client.UI;
-using FFXIVClientStructs.FFXIV.Client.UI.Agent;
 using FFXIVClientStructs.FFXIV.Component.GUI;
 using DalamudObjectKind = Dalamud.Game.ClientState.Objects.Enums.ObjectKind;
 
@@ -28,10 +28,9 @@ internal enum InteractResult
     /// feedback otherwise).</summary>
     InteractedWithTarget,
 
-    /// <summary>A player character was examined via AgentInspect. Plays
-    /// success sfx — the Examine window has its own open sound but starts
-    /// silently for ~half a second while data loads.</summary>
-    ExaminedPlayer,
+    /// <summary>(v0.6.61) A friendly (party/alliance/duty ally/non-hostile
+    /// battle NPC) was hard-targeted as a heal recipient. Plays success sfx.</summary>
+    TargetedFriendly,
 
     /// <summary>(v0.6.32) Initiated Ride Pillion on a mounted party member.
     /// Plays success sfx.</summary>
@@ -49,11 +48,11 @@ internal enum InteractResult
 ///   2. Hard-target interact — the player already has a hard target.
 ///   3. Cone scan for EventNpc / EventObj / Aetheryte (the "world interact"
 ///      kinds — quest givers, vendors, aetherytes, clickable scenery).
-///   4. (v0.5.21.0) Cone scan for nearby player characters → open the
-///      FFXIV Examine window via <c>AgentInspect::ExamineCharacter</c>.
-///      Gated on <see cref="Configuration.InteractExaminePlayers"/> AND the
-///      local player having no weapon drawn (sheathed-only feature —
-///      examining strangers mid-fight makes no sense).
+///   4. (v0.6.61) Cone scan for the nearest FRIENDLY (party / alliance /
+///      duty ally / non-hostile battle NPC) → hard-target it as a heal
+///      recipient. Gated on <see cref="Configuration.InteractTargetFriendlies"/>.
+///      Works weapon-drawn so a healer can acquire a heal target mid-fight.
+///      Replaced the old player-Examine path (ripped out in v0.6.61).
 ///
 /// Detection / advance patterns adapted from ECommons' AddonMaster files.
 /// FireCallback for list selections, simulated mouse click via
@@ -105,13 +104,12 @@ internal sealed unsafe class InteractHandler
             return InteractResult.InteractedWithTarget;
         }
 
-        // Hard-target interact branch with PC awareness. We do this BEFORE the
-        // general TryInteractWithTarget cone-scan path so that:
-        //   • a hard-targeted PC routes to Examine (when enabled + sheathed),
-        //     instead of falling into ts->InteractWithObject which is a no-op
-        //     on player kinds and would silently consume the keypress.
-        //   • a hard-targeted NPC / EventObj / Aetheryte still gets the normal
-        //     InteractWithObject path below.
+        // Hard-target interact branch. We do this BEFORE the general
+        // cone-scan path so a hard-targeted NPC / EventObj / Aetheryte gets
+        // the normal InteractWithObject path. A PC hard target falls through
+        // to the cone scan (InteractWithObject is a no-op on player kinds and
+        // would silently consume the keypress) so the keypress can re-acquire
+        // a fresh friendly heal target.
         var ts = TargetSystem.Instance();
         if (ts != null)
         {
@@ -120,21 +118,11 @@ internal sealed unsafe class InteractHandler
             {
                 var dalamudObj = Plugin.ObjectTable.CreateObjectReference((nint)hardTarget);
 
-                // Ride pillion takes priority over examine for a mounted
-                // party member — not weapon/examine gated (you pillion in
-                // any state). Base-game limits pillion to party members.
+                // Ride pillion takes priority for a mounted party member —
+                // not weapon gated (you pillion in any state). Base-game
+                // limits pillion to party members.
                 if (dalamudObj != null && IsPillionTarget(dalamudObj) && RidePillion(dalamudObj))
                     return InteractResult.RodePillion;
-
-                if (dalamudObj is { ObjectKind: DalamudObjectKind.Pc }
-                    && config.InteractExaminePlayers
-                    && !IsLocalPlayerWeaponDrawn())
-                {
-                    // Second press on a PC — examine. (First press set them
-                    // as the hard target via the PC fallback below.)
-                    AgentInspect.Instance()->ExamineCharacter(dalamudObj.EntityId);
-                    return InteractResult.ExaminedPlayer;
-                }
 
                 // Non-PC hard target — interact (kind-aware: nodes need
                 // OpenObjectInteraction).
@@ -147,9 +135,8 @@ internal sealed unsafe class InteractHandler
                     return InteractResult.InteractedWithTarget;
                 }
 
-                // PC hard-targeted but examine is disabled / weapon drawn —
-                // fall through to the cone scan paths. The keypress shouldn't
-                // be silently lost.
+                // PC hard target — fall through to the cone scan paths so the
+                // keypress isn't silently lost.
             }
         }
 
@@ -163,21 +150,21 @@ internal sealed unsafe class InteractHandler
         if (pillionPc != null && RidePillion(pillionPc))
             return InteractResult.RodePillion;
 
-        // Last resort: PC cone scan. First press on a PC sets them as the
-        // hard target so the next press can route into the Examine branch
-        // above (matches the "click to target, click again to examine"
-        // muscle memory from the vanilla game).
-        if (config.InteractExaminePlayers && !IsLocalPlayerWeaponDrawn())
+        // Last resort: friendly cone scan → hard-target a heal recipient
+        // (party / alliance / duty ally / non-hostile battle NPC). Works
+        // weapon-drawn — a healer acquires the heal target mid-fight while
+        // the enemy stays in the soft target for attacks.
+        if (config.InteractTargetFriendlies)
         {
-            var pc = FindCandidateInCone(IsExaminablePlayer);
-            if (pc != null)
+            var friendly = FindCandidateInCone(IsFriendlyTarget);
+            if (friendly != null)
             {
                 // HardTargetSuppressor only blocks LMB-recency or combat
                 // soft-target promotions — neither applies here, so the
                 // straight assignment passes through cleanly. ITargetManager.Target
                 // routes through SetHardTarget under the hood.
-                Plugin.TargetManager.Target = pc;
-                return InteractResult.InteractedWithTarget;
+                Plugin.TargetManager.Target = friendly;
+                return InteractResult.TargetedFriendly;
             }
         }
 
@@ -200,8 +187,8 @@ internal sealed unsafe class InteractHandler
         var pillion = FindCandidateInCone(IsPillionTarget);
         if (pillion != null) return pillion;
 
-        if (config.InteractExaminePlayers && !IsLocalPlayerWeaponDrawn())
-            return FindCandidateInCone(IsExaminablePlayer);
+        if (config.InteractTargetFriendlies)
+            return FindCandidateInCone(IsFriendlyTarget);
 
         return null;
     }
@@ -316,7 +303,8 @@ internal sealed unsafe class InteractHandler
     /// Cone-only branch: pick the nearest world-interactable (EventNpc /
     /// EventObj / Aetheryte) and call <c>InteractWithObject</c>. Hard-target
     /// handling lives in <see cref="TryInteract"/> directly because it needs
-    /// to special-case player-kind targets for the two-step Examine flow.
+    /// to special-case player-kind targets (PC hard targets fall through to
+    /// the friendly cone scan rather than the no-op InteractWithObject).
     /// </summary>
     private bool TryInteractWithConeNpc()
     {
@@ -425,16 +413,32 @@ internal sealed unsafe class InteractHandler
             || k == DalamudObjectKind.GatheringPoint;
     }
 
-    private static bool IsExaminablePlayer(IGameObject obj)
+    /// <summary>
+    /// A friendly the interact key may hard-target as a heal recipient:
+    ///   • any party member (covers party players + duty-support / Trust NPC
+    ///     allies, which register in the party list);
+    ///   • any non-hostile battle NPC (FATE escort targets, friendly ally NPCs);
+    ///   • inside a duty, any non-hostile player character (covers alliance-raid
+    ///     members — Dalamud has no alliance list, and outside duties you can't
+    ///     heal non-party players anyway, so the party check already covers the
+    ///     open world).
+    /// Excludes self (the cone scan filters it), hostiles, and non-battle
+    /// EventNpcs (those route through the world-interact path).
+    /// </summary>
+    private static bool IsFriendlyTarget(IGameObject obj)
     {
         if (!obj.IsTargetable) return false;
-        return obj.ObjectKind == DalamudObjectKind.Pc;
-    }
 
-    private static bool IsLocalPlayerWeaponDrawn()
-    {
-        var lp = Plugin.ObjectTable.LocalPlayer;
-        return lp != null && lp.StatusFlags.HasFlag(StatusFlags.WeaponOut);
+        if (IsPartyMember(obj)) return true;
+
+        if (obj is IBattleNpc bnpc)
+            return !bnpc.StatusFlags.HasFlag(StatusFlags.Hostile);
+
+        if (obj is IPlayerCharacter pc)
+            return Plugin.Condition[ConditionFlag.BoundByDuty]
+                && !pc.StatusFlags.HasFlag(StatusFlags.Hostile);
+
+        return false;
     }
 
     // ── Ride pillion ────────────────────────────────────────────────────────

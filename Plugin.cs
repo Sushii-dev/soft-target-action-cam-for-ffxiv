@@ -549,15 +549,15 @@ public sealed class Plugin : IDalamudPlugin
 
         // Audio feedback differs by outcome:
         //  - AdvancedDialogue: silent (game plays its own click sounds).
-        //  - Interacted / Examined: success chime — the moment a fresh
-        //    target is engaged is otherwise audio-feedback-less.
+        //  - Interacted / TargetedFriendly / RodePillion: success chime — the
+        //    moment a fresh target is engaged is otherwise audio-feedback-less.
         //  - NothingFound: subtle fail tick so the player knows the key
         //    registered but didn't find anything.
         var result = interactHandler.TryInteract();
         switch (result)
         {
             case InteractResult.InteractedWithTarget:
-            case InteractResult.ExaminedPlayer:
+            case InteractResult.TargetedFriendly:
             case InteractResult.RodePillion:
                 Sfx.PlaySuccess(Configuration);
                 break;

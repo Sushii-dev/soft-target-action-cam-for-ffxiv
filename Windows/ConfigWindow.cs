@@ -497,15 +497,16 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.Spacing();
 
-        // ── Player examine ──────────────────────────────────────────────────
-        var examine = Config.InteractExaminePlayers;
-        if (ImGui.Checkbox("Interact key opens Examine on nearby players", ref examine))
+        // ── Friendly hard-target (heal recipient) ───────────────────────────
+        var friendlies = Config.InteractTargetFriendlies;
+        if (ImGui.Checkbox("Interact key hard-targets friendlies (heal target)", ref friendlies))
         {
-            Config.InteractExaminePlayers = examine;
+            Config.InteractTargetFriendlies = friendlies;
             Config.Save();
         }
-        ImGui.TextDisabled("  Used only as a fallback — NPCs / event objects / aetherytes");
-        ImGui.TextDisabled("  win the cone first. Blocked while your weapon is drawn.");
+        ImGui.TextDisabled("  Fallback after NPCs / objects / aetherytes / pillion. Targets");
+        ImGui.TextDisabled("  party / alliance / duty allies / friendly NPCs. Works in combat");
+        ImGui.TextDisabled("  weapon-out — grab a heal target while the enemy stays soft-targeted.");
 
         ImGui.Spacing();
         ImGui.Separator();
