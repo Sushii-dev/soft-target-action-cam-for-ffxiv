@@ -447,28 +447,34 @@ internal sealed unsafe class InteractHandler
     }
 
     /// <summary>
-    /// A friendly the interact key may hard-target as a heal recipient:
+    /// A friendly the interact key may focus-target as a heal recipient:
     ///   • any party member (covers party players + duty-support / Trust NPC
     ///     allies, which register in the party list);
-    ///   • any non-hostile battle NPC (FATE escort targets, friendly ally NPCs);
-    ///   • inside a duty, any non-hostile player character (covers alliance-raid
-    ///     members — Dalamud has no alliance list, and outside duties you can't
-    ///     heal non-party players anyway, so the party check already covers the
-    ///     open world).
+    ///   • any non-hostile battle NPC with HP (FATE escort targets, friendly
+    ///     ally NPCs, job/class-quest allies you must keep alive);
+    ///   • inside a duty, any non-hostile targetable player character (covers
+    ///     alliance-raid members — Dalamud has no alliance list, and outside
+    ///     duties you can't heal non-party players anyway, so the party check
+    ///     already covers the open world).
     /// Excludes self (the cone scan filters it), hostiles, and non-battle
     /// EventNpcs (those route through the world-interact path).
+    ///
+    /// NOT gated on IsTargetable for battle NPCs: quest/duty ally NPCs you
+    /// must heal are frequently flagged un-targetable for normal click-target
+    /// yet still accept heals (confirmed via /veiled dumptargets — "Leveva
+    /// Heavensreader" kind=BattleNpc tgt=False hostile=False hp=78000 in a
+    /// job-quest duty). MaxHp &gt; 0 filters ambient / event-actor BattleNpcs.
     /// </summary>
     private static bool IsFriendlyTarget(IGameObject obj)
     {
-        if (!obj.IsTargetable) return false;
-
         if (IsPartyMember(obj)) return true;
 
         if (obj is IBattleNpc bnpc)
-            return !bnpc.StatusFlags.HasFlag(StatusFlags.Hostile);
+            return !bnpc.StatusFlags.HasFlag(StatusFlags.Hostile) && bnpc.MaxHp > 0;
 
         if (obj is IPlayerCharacter pc)
-            return Plugin.Condition[ConditionFlag.BoundByDuty]
+            return pc.IsTargetable
+                && Plugin.Condition[ConditionFlag.BoundByDuty]
                 && !pc.StatusFlags.HasFlag(StatusFlags.Hostile);
 
         return false;
