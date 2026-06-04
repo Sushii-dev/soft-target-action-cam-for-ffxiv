@@ -218,7 +218,7 @@ public sealed class Plugin : IDalamudPlugin
 
         CommandManager.AddHandler(CommandName, new CommandInfo(OnCommand)
         {
-            HelpMessage = "Veiled Aim: toggle action camera. Args: on | off | config | cleartarget | debug | dumpaddon | testfire <bar> <slot>"
+            HelpMessage = "Veiled Aim: toggle action camera. Args: on | off | config | cleartarget | debug | dumpaddon | dumptargets | testfire <bar> <slot>"
         });
 
         PluginInterface.UiBuilder.Draw += DrawUI;
@@ -770,6 +770,13 @@ public sealed class Plugin : IDalamudPlugin
                 // callback shape a misbehaving dialog expects. See AddonDumper.
                 AddonDumper.Dump();
                 break;
+            case "dumptargets":
+                // Diagnostic: list nearby objects with the attributes the
+                // friendly-focus predicate keys on (kind, .NET type, Hostile,
+                // HP, targetable, party, BattleNpcKind, dist). Used to find why
+                // a healable NPC isn't focus-targetable. Prints to chat + log.
+                DumpTargets();
+                break;
             case "testfire":
                 // Diagnostic: fire a hotbar slot directly, bypassing the
                 // mouse-bind controller's gates. Validates that
@@ -782,6 +789,53 @@ public sealed class Plugin : IDalamudPlugin
                 ChatGui.Print(userWantsActive ? "[Veiled Aim] Activated." : "[Veiled Aim] Deactivated.");
                 break;
         }
+    }
+
+    /// <summary>
+    /// Diagnostic: dump nearby objects (≤30y) with the attributes the
+    /// friendly-focus predicate keys on, so we can see why a healable quest
+    /// NPC isn't being accepted as a focus target. Prints the 14 nearest to
+    /// chat and the full set to the Dalamud log.
+    /// </summary>
+    private void DumpTargets()
+    {
+        var lp = ObjectTable.LocalPlayer;
+        if (lp == null) { ChatGui.Print("[Veiled Aim] No local player."); return; }
+
+        var inDuty = Condition[ConditionFlag.BoundByDuty];
+        ChatGui.Print($"[Veiled Aim] dumptargets (BoundByDuty={inDuty}):");
+
+        var rows = new System.Collections.Generic.List<(float dist, string line)>();
+        foreach (var obj in ObjectTable)
+        {
+            if (obj.GameObjectId == lp.GameObjectId) continue;
+            var dist = System.Numerics.Vector3.Distance(obj.Position, lp.Position);
+            if (dist > 30f) continue;
+
+            var hostile = obj is Dalamud.Game.ClientState.Objects.Types.ICharacter ch
+                ? ch.StatusFlags.HasFlag(Dalamud.Game.ClientState.Objects.Enums.StatusFlags.Hostile).ToString()
+                : "-";
+            var hp = obj is Dalamud.Game.ClientState.Objects.Types.IBattleChara bc
+                ? $"{bc.CurrentHp}/{bc.MaxHp}" : "-";
+            var bnk = obj is Dalamud.Game.ClientState.Objects.Types.IBattleNpc bn
+                ? ((byte)bn.BattleNpcKind).ToString() : "-";
+            var party = false;
+            foreach (var m in PartyList)
+                if (m.GameObject?.GameObjectId == obj.GameObjectId) { party = true; break; }
+
+            var line = $"{obj.Name.TextValue} | kind={obj.ObjectKind} type={obj.GetType().Name} "
+                     + $"tgt={obj.IsTargetable} hostile={hostile} hp={hp} bnk={bnk} party={party} d={dist:F1}";
+            rows.Add((dist, line));
+        }
+
+        rows.Sort((a, b) => a.dist.CompareTo(b.dist));
+        var n = 0;
+        foreach (var (_, line) in rows)
+        {
+            Log.Information($"[dumptargets] {line}");
+            if (n++ < 14) ChatGui.Print("  " + line);
+        }
+        ChatGui.Print($"[Veiled Aim] {rows.Count} objects ≤30y (full list in /xllog).");
     }
 
     /// <summary>
