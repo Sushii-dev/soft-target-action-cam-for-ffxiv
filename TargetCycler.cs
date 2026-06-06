@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 
@@ -15,12 +16,13 @@ namespace ActionCamera;
 /// the hard target through a stable ring of every attackable object in range.
 /// The soft-target cone is untouched: cycling only moves the hard target.
 ///
-/// Reading the wheel: ImGui's per-frame MouseWheel delta is 0 while the cursor
-/// is hidden over the game world (Dalamud only feeds the wheel to ImGui when it
-/// wants the mouse), so it can't be used here. Instead we let the game apply
-/// its own wheel→zoom, read the resulting camera-distance delta as the scroll
-/// signal, then re-pin the distance so the view never actually moves. This is
-/// hook-free and works exactly where the direct wheel read failed.
+/// Reading the wheel: the scroll signal is ImGui's per-frame MouseWheel delta
+/// (Dalamud populates it unconditionally in its WndProc, so it is valid even
+/// with the cursor hidden over the game world, and it is a true per-frame edge —
+/// nonzero only on the frame the notch arrives). Camera distance is pinned each
+/// engaged frame purely to freeze the zoom, NOT as the scroll signal: Distance
+/// is a live field the game rewrites every frame (collision, auto-zoom, char
+/// movement), so reading its delta would fire continuously, not per notch.
 ///
 /// Ring design (the robustness contract):
 ///  - ONE ordered list walked by an index. Wheel-up = +1, wheel-down = -1, both
@@ -44,9 +46,8 @@ public sealed unsafe class TargetCycler
     private const int OffDistance = 0x124;       // float, current zoom distance
     private const int OffInterpDistance = 0x18C; // float, interpolation target
 
-    // A wheel notch moves zoom distance by ~0.75+. This filters float noise
-    // while staying well under one notch.
-    private const float ZoomScrollEpsilon = 0.1f;
+    // Below this absolute ImGui wheel delta we treat the frame as no-scroll.
+    private const float WheelEpsilon = 0.1f;
 
     private readonly Configuration config;
     private readonly Func<bool> isCameraActive;
@@ -90,26 +91,28 @@ public sealed unsafe class TargetCycler
 
         if (!modDown) { zoomLocked = false; return; }
 
-        // Engaged: freeze zoom and read the wheel as the camera-distance delta
-        // the game applied before we re-pin it.
-        var scroll = LockZoomAndReadScroll();
-        if (scroll == 0f) return;
+        // Freeze zoom for as long as the modifier is held (snapshot on the
+        // first engaged frame, re-pin every frame). This only hides the game's
+        // own wheel→zoom; it is NOT the scroll signal.
+        FreezeZoom();
 
-        // Zooming in shrinks distance (delta < 0) = wheel up = next target.
-        var dir = scroll < 0f ? 1 : -1;
+        // Scroll signal: ImGui's per-frame wheel delta (a true edge — nonzero
+        // only on the notch frame, so no repeat).
+        var wheel = ImGui.GetIO().MouseWheel;
+        if (MathF.Abs(wheel) <= WheelEpsilon) return;
+
+        var dir = wheel > 0f ? 1 : -1; // wheel up = next target
         if (config.CycleInvertScroll) dir = -dir;
-        Cycle(dir);
+        var steps = Math.Max(1, (int)MathF.Round(MathF.Abs(wheel)));
+        Cycle(dir * steps);
     }
 
-    /// <summary>
-    /// Freeze the camera zoom and return the signed distance change the wheel
-    /// produced this frame (0 if none). On the first engaged frame it only
-    /// snapshots the lock baseline and returns 0.
-    /// </summary>
-    private float LockZoomAndReadScroll()
+    /// <summary>Pin the active camera's zoom to the value captured on the first
+    /// engaged frame, so the wheel cycles instead of zooming.</summary>
+    private void FreezeZoom()
     {
         var cam = CameraManager.Instance()->CurrentCamera;
-        if (cam == null) return 0f;
+        if (cam == null) return;
 
         var b = (nint)cam;
         var pDist = (float*)(b + OffDistance);
@@ -119,23 +122,10 @@ public sealed unsafe class TargetCycler
         {
             lockedDistance = *pDist;
             zoomLocked = true;
-            *pDist = lockedDistance;
-            *pInterp = lockedDistance;
-            return 0f;
         }
 
-        // Whichever field the wheel wrote (current vs interpolation target)
-        // shows the deviation; take the larger magnitude.
-        var dD = *pDist - lockedDistance;
-        var dI = *pInterp - lockedDistance;
-        var delta = MathF.Abs(dI) >= MathF.Abs(dD) ? dI : dD;
-
-        // Re-pin both so the view never moves and the baseline resets to 0 for
-        // the next frame — one notch is detected exactly once.
         *pDist = lockedDistance;
         *pInterp = lockedDistance;
-
-        return MathF.Abs(delta) > ZoomScrollEpsilon ? delta : 0f;
     }
 
     private void Cycle(int step)
