@@ -337,20 +337,74 @@ public sealed unsafe class TargetSelector
         }
     }
 
+    // Auto-attack ("Attack"). Used purely as a faction/validity probe via
+    // ActionManager.CanUseActionOnTarget — never fired. The action's own
+    // target rules answer "may a hostile action legally hit this object?",
+    // which is the game's authoritative enemy/friend determination.
+    private const uint AutoAttackActionId = 7;
+
     private static bool IsValidTarget(IGameObject obj, IGameObject localPlayer, bool requireAggro)
     {
-        if (obj.GameObjectId == localPlayer.GameObjectId) return false;
-        if (obj.ObjectKind != ObjectKind.BattleNpc) return false;
-        if (obj is not IBattleNpc npc || (byte)npc.BattleNpcKind != 5) return false;
-        if (npc.CurrentHp == 0) return false;
-        if (!obj.IsTargetable) return false;
-        // Never target friendlies (green entities — duty allies, friendly NPCs,
-        // escort targets). The Hostile flag is the game's own enemy/red-nameplate
-        // bit, set for all attackable enemies (incl. passive un-aggroed mobs) and
-        // never for friendlies. Combat targeting must skip anything not hostile.
-        if (!npc.StatusFlags.HasFlag(StatusFlags.Hostile)) return false;
+        if (!IsAttackable(obj, localPlayer)) return false;
         if (requireAggro && !IsTargetingParty(obj, localPlayer)) return false;
         return true;
+    }
+
+    /// <summary>
+    /// The shared "is this a legal combat target?" predicate. Used by the
+    /// soft-target cone scan (<see cref="IsValidTarget"/>) and by the
+    /// hard-target cycler, so both agree exactly on what counts as an enemy.
+    /// Covers normal enemies, striking dummies, boss weakpoints, and — in PvP —
+    /// hostile enemy players. Excludes the local player, dead actors,
+    /// untargetables, and all friendlies/allies/party. No cone or range test
+    /// here; callers add their own spatial gates.
+    /// </summary>
+    public static bool IsAttackable(IGameObject obj, IGameObject localPlayer)
+    {
+        if (obj.GameObjectId == localPlayer.GameObjectId) return false;
+
+        // Must be a living combatant with HP. IBattleChara covers enemy
+        // BattleNpcs, striking dummies, boss weakpoints AND (in PvP) enemy
+        // players — IPlayerCharacter derives from IBattleChara.
+        if (obj is not IBattleChara bc) return false;
+        if (bc.CurrentHp == 0) return false;
+        if (!obj.IsTargetable) return false;
+
+        // Enemy determination is delegated to the game, not inferred from our
+        // own flag proxies. The old gate required StatusFlags.Hostile, which
+        // (correctly) excluded green allies but ALSO ate every attackable-yet-
+        // non-hostile object: striking dummies, certain boss weakpoints,
+        // destructibles. CanUseActionOnTarget(auto-attack) returns true for
+        // anything a hostile action may legally target — normal enemies,
+        // dummies, weakpoints, and hostile PvP players — and false for
+        // party/allies/friendlies. The Hostile flag is kept as a cheap
+        // fast-path so normal enemies never regress if the action-validity
+        // call is ever weapon-state sensitive while sheathed.
+        var isEnemy = bc.StatusFlags.HasFlag(StatusFlags.Hostile) || CanAttack(obj);
+        if (!isEnemy) return false;
+
+        // PvE: never grab a player character (a passing sightseer that
+        // CanUseActionOnTarget might permit). PvP: enemy players ARE the point,
+        // and they already passed the IBattleChara + attackability checks above.
+        if (!Plugin.ClientState.IsPvP && obj.ObjectKind != ObjectKind.BattleNpc)
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
+    /// The game's own "can a hostile action hit this?" check, via
+    /// <c>ActionManager.CanUseActionOnTarget</c> with the auto-attack id. True
+    /// for enemies / dummies / weakpoints / hostile PvP players; false for
+    /// allies, party, and friendlies. Range and line-of-sight are NOT part of
+    /// this — it is pure target-faction validity.
+    /// </summary>
+    private static bool CanAttack(IGameObject obj)
+    {
+        var go = (FFXIVClientStructs.FFXIV.Client.Game.Object.GameObject*)obj.Address;
+        if (go == null) return false;
+        return FFXIVClientStructs.FFXIV.Client.Game.ActionManager
+            .CanUseActionOnTarget(AutoAttackActionId, go);
     }
 
     private static bool IsTargetingParty(IGameObject obj, IGameObject localPlayer)

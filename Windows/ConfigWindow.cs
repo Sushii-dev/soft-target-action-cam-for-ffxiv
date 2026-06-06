@@ -19,6 +19,7 @@ public sealed class ConfigWindow : Window, IDisposable
     private bool listeningForNeedKey;
     private bool listeningForGreedKey;
     private bool listeningForPassKey;
+    private bool listeningForCycleKey;
 
     // Which mouse-bind row (if any) currently has its button picker open.
     // Tracked by reference so add/remove of OTHER rows in MouseBinds
@@ -360,6 +361,50 @@ public sealed class ConfigWindow : Window, IDisposable
             k => Config.ClearHardTargetKey = k, ref listeningForClearKey,
             noneLabel: "(none – use /veiled cleartarget)");
         ImGui.TextDisabled("  Edge-triggered: clears the current hard target on key down.");
+
+        ImGui.EndDisabled();
+
+        // ── Hard-target cycling ──────────────────────────────────────────────
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Hard-Target Cycling");
+        ImGui.TextDisabled("  Hold the modifier + scroll the wheel to walk the HARD target");
+        ImGui.TextDisabled("  through every enemy in range (zoom is locked while held). Order");
+        ImGui.TextDisabled("  clusters a boss's parts first; scroll back to step in reverse.");
+        ImGui.Spacing();
+
+        var cycleEnabled = Config.CycleEnabled;
+        if (ImGui.Checkbox("Enable modifier + wheel cycling", ref cycleEnabled))
+        {
+            Config.CycleEnabled = cycleEnabled;
+            Config.Save();
+        }
+
+        ImGui.BeginDisabled(!Config.CycleEnabled);
+
+        ImGui.Text("Cycle modifier key:");
+        ImGui.SameLine();
+        DrawKeyPicker("cyclekey", Config.CycleModifierKey,
+            k => Config.CycleModifierKey = k, ref listeningForCycleKey);
+        ImGui.TextDisabled("  Held while scrolling. Default Shift. Only active while the");
+        ImGui.TextDisabled("  camera is on and the cursor is hidden, so it never hijacks");
+        ImGui.TextDisabled("  menu scrolling or normal zoom.");
+
+        var cycleDist = Config.CycleMaxDistance;
+        ImGui.SetNextItemWidth(200);
+        if (ImGui.SliderFloat("Cycle range (y)", ref cycleDist, 10f, 100f, "%.0fy"))
+        {
+            Config.CycleMaxDistance = cycleDist;
+            Config.Save();
+        }
+
+        var cycleInvert = Config.CycleInvertScroll;
+        if (ImGui.Checkbox("Invert scroll direction", ref cycleInvert))
+        {
+            Config.CycleInvertScroll = cycleInvert;
+            Config.Save();
+        }
 
         ImGui.EndDisabled();
     }

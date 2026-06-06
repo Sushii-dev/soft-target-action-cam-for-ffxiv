@@ -46,6 +46,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly CursorUpdateHook cursorUpdateHook;
     private readonly DebugOverlay debugOverlay;
     private readonly MouseBindController mouseBindController;
+    private readonly TargetCycler targetCycler;
     private readonly MouseOverSuppressor mouseOverSuppressor;
     private readonly SoftTargetSuppressor softTargetSuppressor;
     private readonly InputStatusSuppressor inputStatusSuppressor;
@@ -212,6 +213,23 @@ public sealed class Plugin : IDalamudPlugin
             () => cameraController.IsActive,
             CameraController.IsGameCursorVisible,
             IsMenuOpen);
+
+        // Modifier + scroll-wheel hard-target cycling. Same engage gate as the
+        // mouse binds (cam active + cursor hidden + no menu). The setter mirrors
+        // the hard-target keybind: bypass the soft→hard promotion suppressor for
+        // this one explicit SetHardTarget so a cycle to the current cone pick
+        // isn't rejected.
+        targetCycler = new TargetCycler(
+            Configuration,
+            () => cameraController.IsActive,
+            CameraController.IsGameCursorVisible,
+            IsMenuOpen,
+            obj =>
+            {
+                hardTargetSuppressor.AllowNext();
+                try     { TargetManager.Target = obj; }
+                finally { hardTargetSuppressor.CancelAllow(); }
+            });
 
         ConfigWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(ConfigWindow);
@@ -920,6 +938,11 @@ public sealed class Plugin : IDalamudPlugin
             if (pick != null && TargetManager.SoftTarget?.GameObjectId != pick.GameObjectId)
                 TargetSelector.DirectSetSoftTarget(pick);
         }
+
+        // Hard-target cycling (modifier + wheel). Runs here because the wheel
+        // delta is only valid to read inside an ImGui frame; also pins camera
+        // zoom while engaged so the wheel cycles instead of zooming.
+        targetCycler.Update();
 
         WindowSystem.Draw();
         reticleOverlay.Draw();

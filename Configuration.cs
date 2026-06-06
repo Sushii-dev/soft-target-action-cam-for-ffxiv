@@ -149,8 +149,10 @@ public class Configuration : IPluginConfiguration
     // range gate + score use HORIZONTAL distance — so an enemy directly ahead but
     // elevated targets exactly like one on the ground, no need to pitch the cam
     // up. This cap is the only vertical limit: keeps the cone from grabbing
-    // something on the floor above/below in multi-level arenas. Generous default.
-    public float AutoTargetMaxVertical { get; set; } = 30f;
+    // something on the floor above/below in multi-level arenas. Default kept
+    // tight (~one floor) so the cone doesn't reach a different elevation;
+    // raise it via the Targeting tab for arenas with tall single-level fights.
+    public float AutoTargetMaxVertical { get; set; } = 8f;
 
     // Weight given to angle vs distance when scoring candidates.
     // Higher = prefer more centred targets; lower = prefer closer targets.
@@ -166,6 +168,28 @@ public class Configuration : IPluginConfiguration
     // (upstream behavior — avoids accidentally engaging loitering mobs via hard target).
     // When false, all valid hostile NPCs in the cone are considered.
     public bool RequireAggro { get; set; } = false;
+
+    // --- Hard-target cycling (modifier + scroll wheel) ---
+    //
+    // While the camera is active and the modifier key is held, the mouse wheel
+    // walks the HARD target through a stable ring of every attackable in range
+    // instead of zooming (zoom is pinned for the duration). The ring is ordered
+    // as a nearest-neighbour chain seeded from the current target, so a boss's
+    // weakpoints/parts (which sit on top of it) cycle first before distant adds.
+    // Scrolling one direction visits every target and wraps; scrolling back
+    // returns to the previous selection.
+
+    public bool CycleEnabled { get; set; } = true;
+
+    // Modifier held to repurpose the wheel for target cycling. Default Shift.
+    public VirtualKey CycleModifierKey { get; set; } = VirtualKey.SHIFT;
+
+    // Max range (yalms) for ring membership. Generous so cycling reaches
+    // everything the game would let you target.
+    public float CycleMaxDistance { get; set; } = 55f;
+
+    // Flip wheel-up/down direction for cycling.
+    public bool CycleInvertScroll { get; set; } = false;
 
     // Hardcoded FFXIV behavior: if you have no hard target and use an action against
     // your soft target, the game promotes it to a hard target. The plugin can suppress
@@ -397,6 +421,18 @@ public class Configuration : IPluginConfiguration
             if (!MutedSoftTargetSoundIds.Contains(11)) MutedSoftTargetSoundIds.Add(11);
             if (!MutedSoftTargetSoundIds.Contains(3))  MutedSoftTargetSoundIds.Add(3);
             Version = 5;
+            dirty = true;
+        }
+
+        if (Version < 6)
+        {
+            // v0.6.66 tightened AutoTargetMaxVertical default 30 -> 8 (30y
+            // reached two-three floors and grabbed enemies on other levels).
+            // Anyone still on the old untouched default gets the tighter one;
+            // a user who set a custom vertical cap is left alone.
+            if (AutoTargetMaxVertical == 30f)
+                AutoTargetMaxVertical = 8f;
+            Version = 6;
             dirty = true;
         }
 
