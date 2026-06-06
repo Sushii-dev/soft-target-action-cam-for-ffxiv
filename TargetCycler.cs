@@ -4,7 +4,7 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
-using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
+using FFXIVClientStructs.FFXIV.Client.Game.Control;
 
 namespace ActionCamera;
 
@@ -40,12 +40,6 @@ namespace ActionCamera;
 /// </summary>
 public sealed unsafe class TargetCycler
 {
-    // GameCamera field offsets (the struct CameraManager.CurrentCamera points
-    // at; CameraController writes HRotation 0x130 on the same pointer). Stable
-    // across recent patches.
-    private const int OffDistance = 0x124;       // float, current zoom distance
-    private const int OffInterpDistance = 0x18C; // float, interpolation target
-
     // Below this absolute ImGui wheel delta we treat the frame as no-scroll.
     private const float WheelEpsilon = 0.1f;
 
@@ -76,28 +70,27 @@ public sealed unsafe class TargetCycler
     }
 
     /// <summary>
-    /// Called once per render frame from <c>Plugin.DrawUI</c>. Handles the
-    /// engage gate, zoom freeze, wheel-as-zoom-delta detection, and cycle step.
+    /// Zoom-freeze half — called from <c>Plugin.OnFrameworkUpdate</c>. Camera
+    /// writes only stick from the framework tick (same place CameraController
+    /// writes rotation); a DrawUI write lands after the game has built the
+    /// frame's camera and is silently discarded. Pins the Game camera's
+    /// Distance + InterpDistance so the wheel cycles instead of zooming.
     /// </summary>
-    public void Update()
+    public void UpdateFreeze()
     {
-        if (!config.CycleEnabled) { zoomLocked = false; return; }
-
-        var gateOk = isCameraActive()
-                     && !isCursorVisible()
-                     && !isMenuOpen();
-        // IsDownRaw is focus-gated, so an out-of-focus modifier never engages.
-        var modDown = gateOk && InputBinding.IsDownRaw(config.CycleModifierKey);
-
-        if (!modDown) { zoomLocked = false; return; }
-
-        // Freeze zoom for as long as the modifier is held (snapshot on the
-        // first engaged frame, re-pin every frame). This only hides the game's
-        // own wheel→zoom; it is NOT the scroll signal.
+        if (!config.CycleEnabled || !IsEngaged()) { zoomLocked = false; return; }
         FreezeZoom();
+    }
 
-        // Scroll signal: ImGui's per-frame wheel delta (a true edge — nonzero
-        // only on the notch frame, so no repeat).
+    /// <summary>
+    /// Scroll half — called from <c>Plugin.DrawUI</c>, the only place ImGui's
+    /// per-frame wheel delta is valid. The delta is a true edge (nonzero only
+    /// on the notch frame), so cycling fires once per notch with no repeat.
+    /// </summary>
+    public void UpdateScroll()
+    {
+        if (!config.CycleEnabled || !IsEngaged()) return;
+
         var wheel = ImGui.GetIO().MouseWheel;
         if (MathF.Abs(wheel) <= WheelEpsilon) return;
 
@@ -107,25 +100,32 @@ public sealed unsafe class TargetCycler
         Cycle(dir * steps);
     }
 
-    /// <summary>Pin the active camera's zoom to the value captured on the first
-    /// engaged frame, so the wheel cycles instead of zooming.</summary>
+    private bool IsEngaged()
+        // IsDownRaw is focus-gated, so an out-of-focus modifier never engages.
+        => isCameraActive()
+           && !isCursorVisible()
+           && !isMenuOpen()
+           && InputBinding.IsDownRaw(config.CycleModifierKey);
+
+    /// <summary>Pin the in-game camera's zoom to the value captured on the
+    /// first engaged frame. Uses the Game.Control camera (Distance @0x124,
+    /// typed here) — NOT the Graphics.Scene render camera, whose layout
+    /// differs and which earlier writes wrongly targeted.</summary>
     private void FreezeZoom()
     {
-        var cam = CameraManager.Instance()->CurrentCamera;
+        var cm = CameraManager.Instance();
+        if (cm == null) return;
+        var cam = cm->Camera;
         if (cam == null) return;
-
-        var b = (nint)cam;
-        var pDist = (float*)(b + OffDistance);
-        var pInterp = (float*)(b + OffInterpDistance);
 
         if (!zoomLocked)
         {
-            lockedDistance = *pDist;
+            lockedDistance = cam->Distance;
             zoomLocked = true;
         }
 
-        *pDist = lockedDistance;
-        *pInterp = lockedDistance;
+        cam->Distance = lockedDistance;
+        cam->InterpDistance = lockedDistance;
     }
 
     private void Cycle(int step)

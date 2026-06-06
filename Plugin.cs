@@ -312,6 +312,12 @@ public sealed class Plugin : IDalamudPlugin
         // in cursor-locked mode" that the rest of the systems do.
         mouseBindController.Update();
 
+        // Hard-target cycling, zoom-freeze half. Must run in the framework tick
+        // so the camera-distance pin actually sticks (DrawUI is too late — the
+        // game has already built the frame's camera). The scroll half runs in
+        // DrawUI where the ImGui wheel delta is valid.
+        targetCycler.UpdateFreeze();
+
         // v0.6.12: keep MouseOverNameplateTarget (+0xE0) clear while cam
         // intent is on. Decomp research traced the LMB-release soft-target
         // reseat (the acquire ring pulse + sound) to the click-confirm
@@ -939,10 +945,10 @@ public sealed class Plugin : IDalamudPlugin
                 TargetSelector.DirectSetSoftTarget(pick);
         }
 
-        // Hard-target cycling (modifier + wheel). Runs here because the wheel
-        // delta is only valid to read inside an ImGui frame; also pins camera
-        // zoom while engaged so the wheel cycles instead of zooming.
-        targetCycler.Update();
+        // Hard-target cycling, scroll half. Runs here because the ImGui wheel
+        // delta is only valid inside an ImGui frame. The zoom-freeze half runs
+        // in OnFrameworkUpdate (camera writes only stick from the framework tick).
+        targetCycler.UpdateScroll();
 
         WindowSystem.Draw();
         reticleOverlay.Draw();
