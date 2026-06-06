@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 
@@ -14,35 +13,40 @@ namespace ActionCamera;
 /// While the camera is active, the cursor is hidden, and the configured
 /// modifier (default Shift) is held, the mouse wheel no longer zooms — it walks
 /// the hard target through a stable ring of every attackable object in range.
-/// The soft-target cone is untouched: this only moves the hard target the user
-/// has already committed (or, if none, seeds from the nearest attackable).
+/// The soft-target cone is untouched: cycling only moves the hard target.
+///
+/// Reading the wheel: ImGui's per-frame MouseWheel delta is 0 while the cursor
+/// is hidden over the game world (Dalamud only feeds the wheel to ImGui when it
+/// wants the mouse), so it can't be used here. Instead we let the game apply
+/// its own wheel→zoom, read the resulting camera-distance delta as the scroll
+/// signal, then re-pin the distance so the view never actually moves. This is
+/// hook-free and works exactly where the direct wheel read failed.
 ///
 /// Ring design (the robustness contract):
 ///  - ONE ordered list walked by an index. Wheel-up = +1, wheel-down = -1, both
-///    wrapping. Because it is literally ±1 on a fixed list, scrolling one way
-///    eventually visits every target and scrolling back returns to the exact
-///    previous selection.
+///    wrapping. Scrolling one way eventually visits every target; scrolling
+///    back returns to the exact previous selection.
 ///  - Order is a greedy nearest-neighbour chain seeded from the current target,
-///    so a boss's parts/weakpoints (which sit physically on the boss) land
-///    adjacent and cycle first, before distant adds. No knowledge of entity
-///    parentage is needed — proximity does the clustering.
-///  - The ring is keyed by GameObjectId. When the attackable set changes
-///    (an add spawns, a part dies) the ring is updated IN PLACE — dead ids are
-///    dropped, new ids inserted next to their nearest existing neighbour — so
-///    the established order and reversibility survive across spawns/deaths and
-///    the user is never yanked off their selection.
+///    so a boss's parts/weakpoints (which sit on the boss) cluster adjacent and
+///    cycle first, before distant adds.
+///  - Keyed by GameObjectId; updated IN PLACE on membership change (drop dead,
+///    insert new next to nearest neighbour) so order + reversibility survive
+///    spawns/deaths and the selection is never yanked.
 ///
-/// Zoom is locked hook-free: on the first engaged frame the active camera's
-/// Distance is snapshotted and re-pinned every engaged frame, so the wheel that
-/// the game also reads for zoom produces no visible change. Releasing the
-/// modifier unlocks instantly.
+/// First scroll with no hard target locks onto the current soft/cone pick;
+/// further scrolls cycle from there.
 /// </summary>
 public sealed unsafe class TargetCycler
 {
-    // GameCamera field offsets (same struct CameraController writes via
-    // CameraManager.Instance()->CurrentCamera). Stable across recent patches.
+    // GameCamera field offsets (the struct CameraManager.CurrentCamera points
+    // at; CameraController writes HRotation 0x130 on the same pointer). Stable
+    // across recent patches.
     private const int OffDistance = 0x124;       // float, current zoom distance
-    private const int OffInterpDistance = 0x18C; // float, smoothing target
+    private const int OffInterpDistance = 0x18C; // float, interpolation target
+
+    // A wheel notch moves zoom distance by ~0.75+. This filters float noise
+    // while staying well under one notch.
+    private const float ZoomScrollEpsilon = 0.1f;
 
     private readonly Configuration config;
     private readonly Func<bool> isCameraActive;
@@ -71,52 +75,87 @@ public sealed unsafe class TargetCycler
     }
 
     /// <summary>
-    /// Called once per render frame from <c>Plugin.DrawUI</c> — the only place
-    /// ImGui's per-frame wheel delta is valid to read. Handles the engage gate,
-    /// zoom lock, and the wheel-driven cycle step.
+    /// Called once per render frame from <c>Plugin.DrawUI</c>. Handles the
+    /// engage gate, zoom freeze, wheel-as-zoom-delta detection, and cycle step.
     /// </summary>
     public void Update()
     {
-        if (!config.CycleEnabled) { ReleaseZoomLock(); return; }
+        if (!config.CycleEnabled) { zoomLocked = false; return; }
 
         var gateOk = isCameraActive()
                      && !isCursorVisible()
                      && !isMenuOpen();
-        // IsDownRaw is focus-gated, so an out-of-focus Shift never engages.
+        // IsDownRaw is focus-gated, so an out-of-focus modifier never engages.
         var modDown = gateOk && InputBinding.IsDownRaw(config.CycleModifierKey);
-        var hardTarget = Plugin.TargetManager.Target;
-        var engaged = modDown && hardTarget != null;
 
-        if (!engaged)
+        if (!modDown) { zoomLocked = false; return; }
+
+        // Engaged: freeze zoom and read the wheel as the camera-distance delta
+        // the game applied before we re-pin it.
+        var scroll = LockZoomAndReadScroll();
+        if (scroll == 0f) return;
+
+        // Zooming in shrinks distance (delta < 0) = wheel up = next target.
+        var dir = scroll < 0f ? 1 : -1;
+        if (config.CycleInvertScroll) dir = -dir;
+        Cycle(dir);
+    }
+
+    /// <summary>
+    /// Freeze the camera zoom and return the signed distance change the wheel
+    /// produced this frame (0 if none). On the first engaged frame it only
+    /// snapshots the lock baseline and returns 0.
+    /// </summary>
+    private float LockZoomAndReadScroll()
+    {
+        var cam = CameraManager.Instance()->CurrentCamera;
+        if (cam == null) return 0f;
+
+        var b = (nint)cam;
+        var pDist = (float*)(b + OffDistance);
+        var pInterp = (float*)(b + OffInterpDistance);
+
+        if (!zoomLocked)
         {
-            ReleaseZoomLock();
-            return;
+            lockedDistance = *pDist;
+            zoomLocked = true;
+            *pDist = lockedDistance;
+            *pInterp = lockedDistance;
+            return 0f;
         }
 
-        // Lock zoom for as long as the modifier is held with a hard target,
-        // so the wheel is free to mean "cycle" instead of "zoom".
-        EnsureZoomLock();
-        PinZoom();
+        // Whichever field the wheel wrote (current vs interpolation target)
+        // shows the deviation; take the larger magnitude.
+        var dD = *pDist - lockedDistance;
+        var dI = *pInterp - lockedDistance;
+        var delta = MathF.Abs(dI) >= MathF.Abs(dD) ? dI : dD;
 
-        var wheel = ImGui.GetIO().MouseWheel;
-        if (wheel == 0f) return;
+        // Re-pin both so the view never moves and the baseline resets to 0 for
+        // the next frame — one notch is detected exactly once.
+        *pDist = lockedDistance;
+        *pInterp = lockedDistance;
 
-        var magnitude = Math.Max(1, (int)MathF.Round(MathF.Abs(wheel)));
-        var dir = wheel > 0f ? 1 : -1;
-        if (config.CycleInvertScroll) dir = -dir;
-        Cycle(dir * magnitude);
+        return MathF.Abs(delta) > ZoomScrollEpsilon ? delta : 0f;
     }
 
     private void Cycle(int step)
     {
+        var hadHardTarget = Plugin.TargetManager.Target != null;
+
         EnsureRing();
         if (ring.Count == 0) return;
 
         var idx = ring.IndexOf(selectedId);
         if (idx < 0) idx = 0;
 
-        var n = ring.Count;
-        idx = ((idx + step) % n + n) % n; // positive modulo for either direction
+        // With no hard target yet, the first scroll just locks onto the seed
+        // (the soft/cone pick) without stepping; subsequent scrolls cycle.
+        if (hadHardTarget)
+        {
+            var n = ring.Count;
+            idx = ((idx + step) % n + n) % n; // positive modulo, either direction
+        }
+
         selectedId = ring[idx];
 
         var obj = Plugin.ObjectTable.SearchById(selectedId);
@@ -127,8 +166,7 @@ public sealed unsafe class TargetCycler
     /// <summary>
     /// Refresh the ring against the live object table. Builds it on first use;
     /// thereafter updates in place so order + reversibility survive membership
-    /// churn. Re-seats the selection if the hard target was changed externally
-    /// (a click / the hard-target keybind picked something else).
+    /// churn. Re-seats the selection if the hard target was changed externally.
     /// </summary>
     private void EnsureRing()
     {
@@ -148,12 +186,11 @@ public sealed unsafe class TargetCycler
         var curIds = new HashSet<ulong>(current.Select(c => c.id));
         var posById = current.ToDictionary(c => c.id, c => c.pos);
 
-        // External target change → adopt it as the selection anchor.
+        // External hard-target change → adopt it as the selection anchor.
         var ht = Plugin.TargetManager.Target?.GameObjectId;
         if (ht != null && ht.Value != selectedId && curIds.Contains(ht.Value))
             selectedId = ht.Value;
 
-        // First build (or after everything despawned): greedy chain from seed.
         if (ring.Count == 0)
         {
             var seed = SeedId(current, posById, ht, lp.Position);
@@ -163,7 +200,6 @@ public sealed unsafe class TargetCycler
             return;
         }
 
-        // Membership unchanged → keep the established order untouched.
         if (curIds.Count == ring.Count && curIds.SetEquals(ring))
         {
             if (!ring.Contains(selectedId))
@@ -171,11 +207,7 @@ public sealed unsafe class TargetCycler
             return;
         }
 
-        // Drop dead ids, preserving the order of survivors.
         ring.RemoveAll(id => !curIds.Contains(id));
-
-        // Insert each new id next to its nearest existing ring neighbour, so
-        // new adds slot in spatially without reshuffling the whole chain.
         foreach (var c in current)
         {
             if (ring.Contains(c.id)) continue;
@@ -186,8 +218,8 @@ public sealed unsafe class TargetCycler
             selectedId = ring.Count > 0 ? ring[0] : 0ul;
     }
 
-    /// <summary>Pick the chain seed: current hard target, else last selection,
-    /// else the attackable nearest the player.</summary>
+    /// <summary>Seed the chain: hard target, else the soft/cone pick, else the
+    /// last selection, else the attackable nearest the player.</summary>
     private ulong SeedId(
         List<(ulong id, Vector3 pos)> current,
         Dictionary<ulong, Vector3> posById,
@@ -195,6 +227,10 @@ public sealed unsafe class TargetCycler
         Vector3 playerPos)
     {
         if (ht != null && posById.ContainsKey(ht.Value)) return ht.Value;
+
+        var sft = Plugin.TargetManager.SoftTarget?.GameObjectId;
+        if (sft != null && posById.ContainsKey(sft.Value)) return sft.Value;
+
         if (selectedId != 0 && posById.ContainsKey(selectedId)) return selectedId;
 
         var best = 0ul;
@@ -256,38 +292,5 @@ public sealed unsafe class TargetCycler
         }
         if (bestIdx < 0) ring.Add(newId);
         else ring.Insert(bestIdx + 1, newId);
-    }
-
-    // ── Zoom lock ─────────────────────────────────────────────────────────────
-
-    private void EnsureZoomLock()
-    {
-        if (zoomLocked) return;
-        if (TryReadDistance(out var dist))
-        {
-            lockedDistance = dist;
-            zoomLocked = true;
-        }
-    }
-
-    private void PinZoom()
-    {
-        if (!zoomLocked) return;
-        var cam = CameraManager.Instance()->CurrentCamera;
-        if (cam == null) return;
-        var camBase = (nint)cam;
-        *(float*)(camBase + OffDistance) = lockedDistance;
-        *(float*)(camBase + OffInterpDistance) = lockedDistance;
-    }
-
-    private void ReleaseZoomLock() => zoomLocked = false;
-
-    private bool TryReadDistance(out float dist)
-    {
-        dist = 0f;
-        var cam = CameraManager.Instance()->CurrentCamera;
-        if (cam == null) return false;
-        dist = *(float*)((nint)cam + OffDistance);
-        return true;
     }
 }

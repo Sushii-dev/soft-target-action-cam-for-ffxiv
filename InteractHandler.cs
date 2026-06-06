@@ -470,7 +470,19 @@ internal sealed unsafe class InteractHandler
         if (IsPartyMember(obj)) return true;
 
         if (obj is IBattleNpc bnpc)
-            return !bnpc.StatusFlags.HasFlag(StatusFlags.Hostile) && bnpc.MaxHp > 0;
+        {
+            // Attackable battle NPCs are never heal targets. "Non-hostile" is
+            // NOT enough: striking dummies are non-hostile, and so are normal
+            // enemies that haven't aggroed yet — both are attackable. Keying on
+            // the same game-truth the combat cone uses (CanUseActionOnTarget)
+            // makes the friendly and enemy cones mutually exclusive, so a single
+            // object can never show both an attack ring and an interact cue.
+            // Quest/duty allies are un-attackable (CanUseActionOnTarget false),
+            // including the un-targetable ones, so they still pass.
+            var lp = Plugin.ObjectTable.LocalPlayer;
+            if (lp != null && TargetSelector.IsAttackable(bnpc, lp)) return false;
+            return bnpc.MaxHp > 0;
+        }
 
         if (obj is IPlayerCharacter pc)
             return pc.IsTargetable
