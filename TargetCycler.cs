@@ -2,9 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Objects.Types;
 using FFXIVClientStructs.FFXIV.Client.Game.Control;
+using GameFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace ActionCamera;
 
@@ -16,13 +16,14 @@ namespace ActionCamera;
 /// the hard target through a stable ring of every attackable object in range.
 /// The soft-target cone is untouched: cycling only moves the hard target.
 ///
-/// Reading the wheel: the scroll signal is ImGui's per-frame MouseWheel delta
-/// (Dalamud populates it unconditionally in its WndProc, so it is valid even
-/// with the cursor hidden over the game world, and it is a true per-frame edge —
-/// nonzero only on the frame the notch arrives). Camera distance is pinned each
-/// engaged frame purely to freeze the zoom, NOT as the scroll signal: Distance
-/// is a live field the game rewrites every frame (collision, auto-zoom, char
-/// movement), so reading its delta would fire continuously, not per notch.
+/// Reading the wheel: the scroll signal is the game-side
+/// <c>Framework.Instance()->CursorInputs.MouseWheel</c> (int, −1/0/+1, set per
+/// frame by the input poll, which runs before our framework-tick hook). ImGui's
+/// MouseWheel is 0 here because Dalamud only feeds the wheel to ImGui when it
+/// wants the mouse, and the cursor is hidden over the world. We also zero the
+/// field after reading so the game's own camera-zoom never sees the notch — no
+/// zoom, no twitch — and keep a Distance pin as belt-and-suspenders. Distance
+/// itself is a live field (collision/auto-zoom) so it is never the signal.
 ///
 /// Ring design (the robustness contract):
 ///  - ONE ordered list walked by an index. Wheel-up = +1, wheel-down = -1, both
@@ -40,8 +41,6 @@ namespace ActionCamera;
 /// </summary>
 public sealed unsafe class TargetCycler
 {
-    // Below this absolute ImGui wheel delta we treat the frame as no-scroll.
-    private const float WheelEpsilon = 0.1f;
 
     private readonly Configuration config;
     private readonly Func<bool> isCameraActive;
@@ -70,34 +69,31 @@ public sealed unsafe class TargetCycler
     }
 
     /// <summary>
-    /// Zoom-freeze half — called from <c>Plugin.OnFrameworkUpdate</c>. Camera
-    /// writes only stick from the framework tick (same place CameraController
-    /// writes rotation); a DrawUI write lands after the game has built the
-    /// frame's camera and is silently discarded. Pins the Game camera's
-    /// Distance + InterpDistance so the wheel cycles instead of zooming.
+    /// Whole cycle pass — called from <c>Plugin.OnFrameworkUpdate</c>. Reads the
+    /// game-side wheel, freezes + swallows the zoom, and steps the hard target.
+    /// All in the framework tick: the wheel field is live there, and camera
+    /// writes only stick from the framework tick (a DrawUI write lands after the
+    /// game built the frame's camera and is discarded).
     /// </summary>
-    public void UpdateFreeze()
+    public void Update()
     {
         if (!config.CycleEnabled || !IsEngaged()) { zoomLocked = false; return; }
+
+        var fw = GameFramework.Instance();
+
+        // Read the notch BEFORE swallowing it. MouseWheel is −1/0/+1 per frame.
+        var wheel = fw != null ? fw->CursorInputs.MouseWheel : 0;
+
+        // Freeze zoom (pin) AND swallow the wheel so the game's camera-zoom
+        // never applies the notch — kills the zoom twitch at the source.
         FreezeZoom();
-    }
+        if (fw != null) fw->CursorInputs.MouseWheel = 0;
 
-    /// <summary>
-    /// Scroll half — called from <c>Plugin.DrawUI</c>, the only place ImGui's
-    /// per-frame wheel delta is valid. The delta is a true edge (nonzero only
-    /// on the notch frame), so cycling fires once per notch with no repeat.
-    /// </summary>
-    public void UpdateScroll()
-    {
-        if (!config.CycleEnabled || !IsEngaged()) return;
+        if (wheel == 0) return;
 
-        var wheel = ImGui.GetIO().MouseWheel;
-        if (MathF.Abs(wheel) <= WheelEpsilon) return;
-
-        var dir = wheel > 0f ? 1 : -1; // wheel up = next target
+        var dir = wheel > 0 ? 1 : -1; // +1 = scroll up = next target
         if (config.CycleInvertScroll) dir = -dir;
-        var steps = Math.Max(1, (int)MathF.Round(MathF.Abs(wheel)));
-        Cycle(dir * steps);
+        Cycle(dir);
     }
 
     private bool IsEngaged()
