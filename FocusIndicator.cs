@@ -124,16 +124,14 @@ public sealed unsafe class FocusIndicator
         var min = new Vector2(node->ScreenX, node->ScreenY);
         var max = min + new Vector2(node->Width * scale, node->Height * scale);
 
-        // The collision node is a bit larger than the visible row (hit-area
-        // padding) and runs to the panel edge, so the raw rect blooms past the
-        // row and clips the panel. Inset it so the border hugs the row content.
-        var insetX = 4f * scale;
-        var insetY = 3f * scale;
-        min += new Vector2(insetX, insetY);
-        max -= new Vector2(insetX, insetY);
+        // Tiny inset only — keep the fill inside the panel without pulling any
+        // edge onto the HP numbers.
+        var inset = 1f * scale;
+        min += new Vector2(inset, inset);
+        max -= new Vector2(inset, inset);
         if (max.X <= min.X || max.Y <= min.Y) return;
 
-        DrawEmissiveRect(dl, min, max, col, emissive, pulse);
+        DrawRowHighlight(dl, min, max, col, emissive, pulse);
     }
 
     /// <summary>Match the focus's EntityId to its displayed party row via
@@ -176,33 +174,31 @@ public sealed unsafe class FocusIndicator
     private static bool IsVisible(AtkResNode* node)
         => node != null && (node->NodeFlags & NodeFlags.Visible) != 0;
 
-    // ── Emissive rounded-rect (party-row border) ─────────────────────────────
+    // ── Party-row highlight (fill + left bar) ────────────────────────────────
     //
-    // Mirrors the interact indicator's emissive stack (wide low-alpha glow
-    // passes, dark contour, bright core, hot inner) but as a rounded rect
-    // framing the row, plus a bright left-edge bar so the focused row reads
-    // instantly even in a dense party list.
+    // A translucent tint over the whole row plus a bright glowing left-edge bar.
+    // No stroked rectangle: a hard border lands on the HP %/number text (the
+    // collision node's right edge sits mid-percentage), so a box always clips
+    // it. A low-alpha fill lets the text read straight through, and the bar is
+    // the unmistakable "this row is focused" cue — distinct from the game's own
+    // yellow hard-target row glow.
 
-    private static void DrawEmissiveRect(ImDrawListPtr dl, Vector2 min, Vector2 max, uint col, bool emissive, float pulse)
+    private static void DrawRowHighlight(ImDrawListPtr dl, Vector2 min, Vector2 max, uint col, bool emissive, float pulse)
     {
         const float rounding = 4f;
-        const ImDrawFlags flags = ImDrawFlags.RoundCornersAll;
 
-        // Glow grows INWARD-biased (small outward expansion) so it never blooms
-        // past the row / panel edge like the first cut did.
+        // Translucent row tint — text renders through it.
+        dl.AddRectFilled(min, max, InteractIndicator.WithAlpha(col, 0.14f * pulse), rounding);
+
+        // Bright glowing left-edge bar.
+        const float barW = 4f;
         if (emissive)
-        {
-            dl.AddRect(min - new Vector2(1.5f), max + new Vector2(1.5f), InteractIndicator.WithAlpha(col, 0.16f * pulse), rounding + 1.5f, flags, 4f);
-            dl.AddRect(min - new Vector2(0.5f), max + new Vector2(0.5f), InteractIndicator.WithAlpha(col, 0.28f * pulse), rounding + 0.5f, flags, 2.5f);
-        }
+            dl.AddRectFilled(new Vector2(min.X - 2f, min.Y), new Vector2(min.X + barW + 1f, max.Y),
+                InteractIndicator.WithAlpha(col, 0.30f * pulse), 2f);
 
-        dl.AddRect(min, max, 0xB0000000u, rounding, flags, 2.0f);                       // dark contour
-        dl.AddRect(min, max, InteractIndicator.Brighten(col, 0.45f), rounding, flags, 1.6f); // bright core
-        dl.AddRect(min, max, InteractIndicator.Brighten(col, 0.85f), rounding, flags, 1.0f); // hot inner
-
-        // Bright left-edge bar — the at-a-glance "this row" cue (kept inside the
-        // inset rect so it doesn't add to the width).
-        var barCol = InteractIndicator.Brighten(col, 0.55f);
-        dl.AddRectFilled(new Vector2(min.X, min.Y), new Vector2(min.X + 2.5f, max.Y), barCol, 1.5f);
+        dl.AddRectFilled(new Vector2(min.X, min.Y), new Vector2(min.X + barW, max.Y),
+            InteractIndicator.Brighten(col, 0.55f), 2f);
+        dl.AddRectFilled(new Vector2(min.X, min.Y), new Vector2(min.X + barW * 0.5f, max.Y),
+            InteractIndicator.Brighten(col, 0.90f), 1f);
     }
 }
