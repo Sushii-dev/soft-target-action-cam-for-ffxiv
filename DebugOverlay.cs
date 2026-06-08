@@ -3,6 +3,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using FFXIVClientStructs.FFXIV.Client.System.Input;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using GameFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace ActionCamera;
 
@@ -98,6 +99,9 @@ internal sealed unsafe class DebugOverlay
         ImGui.Text($"menu open:        {isMenuOpen()}");
 
         ImGui.Separator();
+        DrawNativeMouseDelta();
+
+        ImGui.Separator();
         if (cursorUpdateHook != null)
         {
             ImGui.Text($"UpdateCursor hook: {(cursorUpdateHook.IsInstalled ? "installed" : "FAILED")}");
@@ -177,6 +181,42 @@ internal sealed unsafe class DebugOverlay
         ImGui.TextDisabled("an OS / Win32 cursor not the in-game sprite.");
 
         ImGui.End();
+    }
+
+    // ── Native mouse-delta probe (v0.6.71) ──────────────────────────────────
+    //
+    // The candidate replacement for the cursor-warp mouselook: the game's own
+    // per-frame relative delta at Framework->CursorInputs.DeltaX/DeltaY. The
+    // open question is whether it's CLEAN under XWayland/Niri — stays 0 when
+    // the hand is still, doesn't stick nonzero on button press. consecNonZero
+    // counts back-to-back nonzero frames: if it keeps climbing while you hold
+    // the mouse still (especially with a button held), the signal is dirty and
+    // the warp-free rewrite is off the table for this stack.
+    private int consecNonZero;
+    private int peakConsecNonZero;
+
+    private void DrawNativeMouseDelta()
+    {
+        var fw = GameFramework.Instance();
+        if (fw == null) { ImGui.Text("Framework: (null)"); return; }
+
+        ref var ci = ref fw->CursorInputs;
+        var dx = ci.DeltaX;
+        var dy = ci.DeltaY;
+
+        if (dx != 0 || dy != 0) { consecNonZero++; if (consecNonZero > peakConsecNonZero) peakConsecNonZero = consecNonZero; }
+        else consecNonZero = 0;
+
+        ImGui.Text("Native CursorInputs (warp-free candidate):");
+        ImGui.Text($"  DeltaX / DeltaY:   {dx} / {dy}");
+        ImGui.Text($"  PositionX / Y:     {ci.PositionX} / {ci.PositionY}");
+        ImGui.Text($"  MouseWheel:        {ci.MouseWheel}");
+        ImGui.Text($"  HeldFlags:         0x{(uint)ci.MouseButtonHeldFlags:X}");
+        ImGui.Text($"  GameWindowFocused: {ci.IsGameWindowFocused}");
+        ImGui.Text($"  consec nonzero:    {consecNonZero}   (peak {peakConsecNonZero})");
+        ImGui.TextDisabled("  Hold still -> delta should read 0/0 and consec reset.");
+        ImGui.TextDisabled("  Press/hold a button, stay still: consec must NOT climb.");
+        if (ImGui.Button("reset peak")) peakConsecNonZero = 0;
     }
 
     private void TickTransitionCounters()
