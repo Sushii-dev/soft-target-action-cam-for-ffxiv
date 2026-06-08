@@ -94,21 +94,37 @@ public sealed class InteractIndicator
         var emissive = config.IndicatorEmissive;
         var pulse = config.IndicatorPulse ? PulseFactor() : 1f;
 
-        switch (config.InteractIndicatorStyle)
+        DrawMarker(dl, target, config.InteractIndicatorStyle, col, emissive, pulse);
+    }
+
+    /// <summary>
+    /// Render one world-space marker over <paramref name="t"/> in the given
+    /// style/colour. Shared by the interact indicator and the focus indicator
+    /// (<see cref="FocusIndicator"/>) so both look identical bar colour.
+    /// </summary>
+    internal static void DrawMarker(
+        ImDrawListPtr dl,
+        Dalamud.Game.ClientState.Objects.Types.IGameObject t,
+        InteractIndicatorStyle style,
+        uint col,
+        bool emissive,
+        float pulse)
+    {
+        switch (style)
         {
-            case InteractIndicatorStyle.GroundRing:    DrawGroundRing(dl, target, col, emissive, pulse); break;
-            case InteractIndicatorStyle.HeadDot:       DrawHeadDot(dl, target, col, emissive, pulse); break;
-            case InteractIndicatorStyle.HeadChevron:   DrawHeadChevron(dl, target, col, emissive, pulse); break;
+            case InteractIndicatorStyle.GroundRing:    DrawGroundRing(dl, t, col, emissive, pulse); break;
+            case InteractIndicatorStyle.HeadDot:       DrawHeadDot(dl, t, col, emissive, pulse); break;
+            case InteractIndicatorStyle.HeadChevron:   DrawHeadChevron(dl, t, col, emissive, pulse); break;
 
             // The three bracket variants share a draw routine — the sizing
             // knobs (tick length + frame-tightness factor) are the only
             // difference. See DrawScreenBrackets / BracketGeometry.
             case InteractIndicatorStyle.ScreenBrackets:
-                DrawScreenBrackets(dl, target, col, 8f,  0.35f, 1.00f, emissive, pulse); break;
+                DrawScreenBrackets(dl, t, col, 8f,  0.35f, 1.00f, emissive, pulse); break;
             case InteractIndicatorStyle.ScreenBracketsLarge:
-                DrawScreenBrackets(dl, target, col, 16f, 0.35f, 1.00f, emissive, pulse); break;
+                DrawScreenBrackets(dl, t, col, 16f, 0.35f, 1.00f, emissive, pulse); break;
             case InteractIndicatorStyle.ScreenBracketsTight:
-                DrawScreenBrackets(dl, target, col, 16f, 0.22f, 0.75f, emissive, pulse, centerBiasFactor: 0.12f); break;
+                DrawScreenBrackets(dl, t, col, 16f, 0.22f, 0.75f, emissive, pulse, centerBiasFactor: 0.12f); break;
         }
     }
 
@@ -122,13 +138,13 @@ public sealed class InteractIndicator
     // Brighten which respect that order.
 
     /// <summary>Breathing factor in ~[0.70, 1.0] at a calm cadence.</summary>
-    private static float PulseFactor()
+    internal static float PulseFactor()
     {
         var t = (float)ImGui.GetTime();
         return 0.85f + 0.15f * MathF.Sin(t * 3.0f);
     }
 
-    private static uint WithAlpha(uint col, float mul)
+    internal static uint WithAlpha(uint col, float mul)
     {
         var a = (uint)Math.Clamp(((col >> 24) & 0xFFu) * mul, 0f, 255f);
         return (col & 0x00FFFFFFu) | (a << 24);
@@ -136,7 +152,7 @@ public sealed class InteractIndicator
 
     /// <summary>Lerp the RGB channels toward white by <paramref name="k"/>
     /// (alpha preserved) — gives the core stroke its emissive "hot" look.</summary>
-    private static uint Brighten(uint col, float k)
+    internal static uint Brighten(uint col, float k)
     {
         uint a = (col >> 24) & 0xFFu;
         uint b = (col >> 16) & 0xFFu;

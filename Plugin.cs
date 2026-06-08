@@ -41,6 +41,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly RotationDriver rotationDriver;
     private readonly InteractHandler interactHandler;
     private readonly InteractIndicator interactIndicator;
+    private readonly FocusIndicator focusIndicator;
     private readonly HotbarBindOverlay hotbarBindOverlay;
     private readonly CursorShowHook cursorShowHook;
     private readonly CursorUpdateHook cursorUpdateHook;
@@ -98,6 +99,7 @@ public sealed class Plugin : IDalamudPlugin
         // Indicator shares the handler's cone scan so what gets drawn matches
         // what the interact key will fire against. No double scanning.
         interactIndicator    = new InteractIndicator(Configuration, interactHandler.GetIndicatorCandidate);
+        focusIndicator       = new FocusIndicator(Configuration);
         hotbarBindOverlay    = new HotbarBindOverlay(Configuration);
         // Hook AtkCursor.Show to suppress the game's per-tick re-assert while
         // cam is active. Predicate: we only block Show calls that would
@@ -1042,6 +1044,7 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.Draw();
         reticleOverlay.Draw();
         interactIndicator.Draw();
+        focusIndicator.Draw();
         hotbarBindOverlay.Draw();
         debugOverlay.Draw();
     }

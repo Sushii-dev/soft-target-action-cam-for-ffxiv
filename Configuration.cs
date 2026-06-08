@@ -268,6 +268,32 @@ public class Configuration : IPluginConfiguration
     public bool IndicatorEmissive { get; set; } = true;
     public bool IndicatorPulse { get; set; } = true;
 
+    // ── Focus-target indicator (v0.6.74) ────────────────────────────────────
+    //
+    // Make the current FOCUS heal target obvious: a pulsing glowing marker on
+    // the target in the world (same styles as the interact indicator) AND a
+    // glowing highlight over their row in the party list (like the native
+    // hard-target glow, but distinct). Only drawn while a focus is set.
+
+    public bool ShowFocusIndicator { get; set; } = true;
+
+    // World-space pulsing marker over the focus target (find them in 3D).
+    public bool FocusIndicatorWorld { get; set; } = true;
+
+    // Party-list row highlight (who is focused, in the menu).
+    public bool FocusIndicatorPartyList { get; set; } = true;
+
+    // World-marker style (shares the interact indicator's styles).
+    public InteractIndicatorStyle FocusIndicatorStyle { get; set; } = InteractIndicatorStyle.ScreenBracketsLarge;
+
+    // Distinct default: bright healer teal — deliberately NOT the interact
+    // gold (1,0.80,0.30) nor the game's hard-target yellow, so the focus
+    // marker is unmistakable at a glance.
+    public Vector4 FocusIndicatorColor { get; set; } = new Vector4(0.30f, 0.90f, 0.95f, 1.0f);
+
+    public bool FocusIndicatorEmissive { get; set; } = true;
+    public bool FocusIndicatorPulse { get; set; } = true;
+
     // --- Interact target geometry (v0.5.22.0) ---
     //
     // Separate cone + range knobs from the combat auto-target system. Combat
@@ -468,6 +494,14 @@ public class Configuration : IPluginConfiguration
             // (unbound keys / feature off) so no value migration is needed —
             // this only advances the stored version.
             Version = 7;
+            dirty = true;
+        }
+
+        if (Version < 8)
+        {
+            // v0.6.74 added the focus-target indicator (world marker +
+            // party-list highlight). New fields default safely; version-only.
+            Version = 8;
             dirty = true;
         }
 

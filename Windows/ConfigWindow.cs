@@ -611,6 +611,80 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.Separator();
         ImGui.Spacing();
 
+        // ── Focus-target indicator ──────────────────────────────────────────
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Focus Indicator");
+        ImGui.TextDisabled("  Show the current focus target clearly: a pulsing glow on the");
+        ImGui.TextDisabled("  target in the world + a glowing highlight on their party-list");
+        ImGui.TextDisabled("  row. Shown whenever a focus is set (including in combat/duty).");
+        ImGui.Spacing();
+
+        var showFocus = Config.ShowFocusIndicator;
+        if (ImGui.Checkbox("Enable focus indicator", ref showFocus))
+        {
+            Config.ShowFocusIndicator = showFocus;
+            Config.Save();
+        }
+
+        ImGui.BeginDisabled(!Config.ShowFocusIndicator);
+
+        var fWorld = Config.FocusIndicatorWorld;
+        if (ImGui.Checkbox("World marker", ref fWorld))
+        {
+            Config.FocusIndicatorWorld = fWorld;
+            Config.Save();
+        }
+        ImGui.SameLine();
+        var fParty = Config.FocusIndicatorPartyList;
+        if (ImGui.Checkbox("Party-list highlight", ref fParty))
+        {
+            Config.FocusIndicatorPartyList = fParty;
+            Config.Save();
+        }
+
+        var fStyleIdx = (int)Config.FocusIndicatorStyle;
+        ImGui.SetNextItemWidth(220);
+        if (ImGui.Combo("World style##focus", ref fStyleIdx, IndicatorStyleLabels, IndicatorStyleLabels.Length))
+        {
+            Config.FocusIndicatorStyle = (InteractIndicatorStyle)fStyleIdx;
+            Config.Save();
+        }
+
+        var fColor = Config.FocusIndicatorColor;
+        if (ImGui.ColorEdit4("Focus color", ref fColor,
+                ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.NoInputs))
+        {
+            Config.FocusIndicatorColor = fColor;
+            Config.Save();
+        }
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Teal##focuscol"))
+        {
+            Config.FocusIndicatorColor = new Vector4(0.30f, 0.90f, 0.95f, 1.0f);
+            Config.Save();
+        }
+
+        var fEmissive = Config.FocusIndicatorEmissive;
+        if (ImGui.Checkbox("Emissive glow##focus", ref fEmissive))
+        {
+            Config.FocusIndicatorEmissive = fEmissive;
+            Config.Save();
+        }
+        ImGui.SameLine();
+        var fPulse = Config.FocusIndicatorPulse;
+        if (ImGui.Checkbox("Pulse##focus", ref fPulse))
+        {
+            Config.FocusIndicatorPulse = fPulse;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Default teal — distinct from the gold interact cue and the");
+        ImGui.TextDisabled("  game's yellow hard-target glow.");
+
+        ImGui.EndDisabled();
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
         // ── Loot roll quick-keys ────────────────────────────────────────────
         ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Loot Rolling");
         ImGui.TextDisabled("  When a loot-roll window is up, these roll on every");
