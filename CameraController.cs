@@ -6,6 +6,7 @@ using Dalamud.Game.ClientState.Keys;
 using Dalamud.Hooking;
 using FFXIVClientStructs.FFXIV.Client.Graphics.Scene;
 using FFXIVClientStructs.FFXIV.Component.GUI;
+using GameFramework = FFXIVClientStructs.FFXIV.Client.System.Framework.Framework;
 
 namespace ActionCamera;
 
@@ -58,43 +59,10 @@ public sealed unsafe class CameraController : IDisposable
     private readonly Configuration config;
     private readonly TargetSelector targetSelector;
 
-    // Last raw cursor read (pre-warp). XWayland can return a STALE frozen
-    // cursor position after a click until the next input event flushes its
-    // cache; the absolute delta (cursor - screenCenter) then stays a
-    // constant nonzero every frame and the camera drifts (continues even
-    // after the button is released, until the next click flushes the
-    // cache). A stale read is byte-identical frame to frame, whereas real
-    // mouselook always jitters, so we skip rotation on an unchanged read —
-    // killing the drift at the cost of at most one tiny frame on the stuck
-    // transition.
-    private POINT lastRawCur;
-
     private bool isActive;
     private bool cursorHidden;
     private POINT screenCenter;
     private POINT savedCursorPos;
-
-    // Two-stage spike guard for XWayland warp staleness:
-    //
-    //   Stage A (firstMotionAfterActivate):
-    //     Set true on Activate. Cleared on the first Update frame with a
-    //     non-zero delta. While true, all deltas are discarded. This
-    //     catches the case where the user activates, doesn't move for a
-    //     while, then moves — the spike fires whenever they finally move,
-    //     not at a fixed time after activation.
-    //
-    //   Stage B (framesSinceFirstMotion, after Stage A clears):
-    //     Discards the next few frames once motion has begun. When the
-    //     user is actively moving the cursor at the moment of first
-    //     motion, XWayland's cache resyncs to the stale X server position
-    //     across multiple frames as new motion events arrive — each frame
-    //     surfaces another spike. A small cascade window absorbs them.
-    //
-    // Together: imperceptible input loss in the worst case (~100ms once
-    // motion starts), no spike regardless of when the user starts moving.
-    private bool firstMotionAfterActivate;
-    private int framesSinceFirstMotion;
-    private const int CascadeDiscardFrames = 4;
 
     public bool IsActive => isActive;
 
@@ -152,9 +120,6 @@ public sealed unsafe class CameraController : IDisposable
             SetCursorPos(screenCenter.X, screenCenter.Y);
         }
 
-        lastRawCur = screenCenter;
-        firstMotionAfterActivate = true;
-        framesSinceFirstMotion = 0;
         isActive = true;
         Plugin.Log.Debug("[ActionCamera] Activated.");
     }
@@ -163,8 +128,6 @@ public sealed unsafe class CameraController : IDisposable
     {
         if (!isActive) return;
         isActive = false;
-        firstMotionAfterActivate = false;
-        framesSinceFirstMotion = 0;
 
         targetSelector.ClearMouseOverHighlight();
         Plugin.Log.Debug("[ActionCamera] Deactivated.");
@@ -295,76 +258,39 @@ public sealed unsafe class CameraController : IDisposable
         if (!Plugin.ClientState.IsLoggedIn) { Deactivate(); return; }
 
         // Mouse-button-held (RMB or LMB) WITHOUT a configured BETA bind:
-        // the game owns cursor lock and camera rotation. Skip our
-        // cursor-warp + delta-based rotation entirely — they would fight
-        // the game's lock and produce a constant non-zero delta from
-        // centre to the click point, spinning the camera. Cone targeting
-        // and character facing still run, using the game's HRotation
-        // which the game is updating from the mouse input.
-        //
-        // Re-arm both spike-guard stages so when the mouse button
-        // releases the next motion absorbs the warp staleness that would
-        // otherwise hit our reawakening cursor logic.
+        // the game owns cursor lock and camera rotation. Skip our rotation
+        // write so we don't double up on the game's own mouse-camera. Cone
+        // targeting and character facing still run, using the game's
+        // HRotation which the game is updating from the mouse input.
         //
         // When BETA mouse-binds is on and the held button has a bind,
         // ShouldYieldToVanillaMouseCamera() returns false — the click is
-        // a hotbar fire, not a camera input, so the rotation pipeline
-        // keeps running through the click and the user doesn't perceive
-        // a per-click camera hitch.
+        // a hotbar fire, not a camera input, so the rotation pipeline keeps
+        // running through the click and the user doesn't perceive a hitch.
         if (ShouldYieldToVanillaMouseCamera())
         {
-            var hrot = GetCameraHRotation();
-            if (config.AutoTarget) targetSelector.Update(hrot);
-            // Character rotation is driven by RotationDriver each frame; no
-            // per-handler call needed here.
-            GetCursorPos(out var yc);
-            lastRawCur = yc;
-            firstMotionAfterActivate = true;
-            framesSinceFirstMotion = 0;
+            if (config.AutoTarget) targetSelector.Update(GetCameraHRotation());
             return;
         }
 
-        // Read & reset mouse position each frame.
-        GetCursorPos(out var cur);
-        // A STALE (XWayland-frozen) read returns the same value every frame;
-        // real mouse motion always jitters. If the read is unchanged, treat
-        // any (cursor - centre) offset as a stale residual, not input, and
-        // skip rotation — this kills the post-click camera drift.
-        var moved = cur.X != lastRawCur.X || cur.Y != lastRawCur.Y;
-        lastRawCur = cur;
-        var rawDx = cur.X - screenCenter.X;
-        var rawDy = cur.Y - screenCenter.Y;
-        var dx = rawDx * config.MouseSensitivityX;
-        var dy = rawDy * config.MouseSensitivityY;
+        // Mouselook input = the game's OWN per-frame relative delta
+        // (Framework->CursorInputs.DeltaX/DeltaY), NOT a cursor-warp diff.
+        // Under XWayland the absolute cursor (GetCursorPos) goes stale after
+        // button events and the warp-back fakes motion, which drove the old
+        // drift; the native relative delta arrives via the relative-pointer
+        // path and is clean (verified: 0 at rest, only nonzero on real
+        // motion, uncontaminated by our warp). We still warp the hidden
+        // cursor back to centre purely so the OS pointer never hits a screen
+        // edge and clamps the motion the game reports.
+        var fw = GameFramework.Instance();
+        var rawDx = fw != null ? fw->CursorInputs.DeltaX : 0;
+        var rawDy = fw != null ? fw->CursorInputs.DeltaY : 0;
+
         SetCursorPos(screenCenter.X, screenCenter.Y);
 
-        // Stage A — wait for the first nonzero delta. Until motion starts,
-        // the user is stationary and there's no spike to catch yet. The
-        // first nonzero frame IS the spike (warp staleness manifests on the
-        // first real motion event).
-        if (firstMotionAfterActivate)
-        {
-            if (rawDx != 0 || rawDy != 0)
-                firstMotionAfterActivate = false;
-            if (config.AutoTarget)
-                targetSelector.Update(GetCameraHRotation());
-            return;
-        }
-
-        // Stage B — once motion starts, discard a short cascade of frames
-        // for the cases where the user is moving fast at activation time
-        // (each motion event keeps resyncing XWayland's cache to the stale
-        // X server position).
-        framesSinceFirstMotion++;
-        if (framesSinceFirstMotion <= CascadeDiscardFrames)
-        {
-            if (config.AutoTarget)
-                targetSelector.Update(GetCameraHRotation());
-            return;
-        }
-
-        if (moved)
-            ApplyCameraRotation(dx, dy);
+        if (rawDx != 0 || rawDy != 0)
+            ApplyCameraRotation(rawDx * config.MouseSensitivityX,
+                                rawDy * config.MouseSensitivityY);
 
         if (config.AutoTarget)
             targetSelector.Update(GetCameraHRotation());
