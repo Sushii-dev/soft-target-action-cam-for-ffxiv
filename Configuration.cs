@@ -191,6 +191,32 @@ public class Configuration : IPluginConfiguration
     // Flip wheel-up/down direction for cycling.
     public bool CycleInvertScroll { get; set; } = false;
 
+    // ── Focus-target cycling (healer party cycling) ──────────────────────────
+    //
+    // Cycle the FOCUS target through the party in party-list slot order
+    // (pt1 -> pt2 -> ...). For healers: the focus is the dedicated heal target
+    // (ReAction beneficial stack -> Focus Target -> Self). No focus yet -> pt1.
+    // Two independent entry points (both default off / unbound):
+
+    // Dedicated keybind: each press steps the focus one party slot forward.
+    // Camera-independent (works whether or not the action cam is active).
+    public VirtualKey FocusCycleKey { get; set; } = VirtualKey.NO_KEY;
+
+    // Optional reverse keybind: steps one party slot backward.
+    public VirtualKey FocusCycleReverseKey { get; set; } = VirtualKey.NO_KEY;
+
+    // Hold the interact key + scroll to cycle the focus (mirrors the combat
+    // cycler: zoom locked, wheel swallowed). When ON, the interact key fires on
+    // RELEASE so a hold+scroll gesture cancels the normal interact tap cleanly.
+    public bool FocusScrollOnInteractHold { get; set; } = false;
+
+    // Flip wheel-up/down direction for the interact-hold focus scroll.
+    public bool FocusCycleInvertScroll { get; set; } = false;
+
+    // Include the local player (self) as a slot in the focus cycle. On by
+    // default so a healer can cycle to self for self-targeted heals.
+    public bool FocusCycleIncludeSelf { get; set; } = true;
+
     // Hardcoded FFXIV behavior: if you have no hard target and use an action against
     // your soft target, the game promotes it to a hard target. The plugin can suppress
     // this by hooking TargetSystem.SetHardTarget and rejecting calls whose target
@@ -433,6 +459,15 @@ public class Configuration : IPluginConfiguration
             if (AutoTargetMaxVertical == 30f)
                 AutoTargetMaxVertical = 8f;
             Version = 6;
+            dirty = true;
+        }
+
+        if (Version < 7)
+        {
+            // v0.6.73 added focus-target cycling. New fields default safely
+            // (unbound keys / feature off) so no value migration is needed —
+            // this only advances the stored version.
+            Version = 7;
             dirty = true;
         }
 

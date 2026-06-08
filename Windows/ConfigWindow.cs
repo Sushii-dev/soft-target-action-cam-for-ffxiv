@@ -20,6 +20,8 @@ public sealed class ConfigWindow : Window, IDisposable
     private bool listeningForGreedKey;
     private bool listeningForPassKey;
     private bool listeningForCycleKey;
+    private bool listeningForFocusCycleKey;
+    private bool listeningForFocusCycleRevKey;
 
     // Which mouse-bind row (if any) currently has its button picker open.
     // Tracked by reference so add/remove of OTHER rows in MouseBinds
@@ -553,6 +555,57 @@ public sealed class ConfigWindow : Window, IDisposable
         ImGui.TextDisabled("  party / alliance / duty allies / friendly NPCs. Works in combat");
         ImGui.TextDisabled("  weapon-out. Pair with a ReAction beneficial stack → Focus Target");
         ImGui.TextDisabled("  → Self so heals land on the focus, hard target stays free for enemies.");
+
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        // ── Focus-target party cycling ──────────────────────────────────────
+        ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Focus Cycling (heal targets)");
+        ImGui.TextDisabled("  Cycle the FOCUS target through the party in party-list order");
+        ImGui.TextDisabled("  (pt1 → pt2 → …). No focus yet → pt1. Pairs with the ReAction");
+        ImGui.TextDisabled("  beneficial stack → Focus Target → Self, same as above.");
+        ImGui.Spacing();
+
+        ImGui.Text("Cycle focus key (next):");
+        ImGui.SameLine();
+        DrawKeyPicker("focuscyclekey", Config.FocusCycleKey,
+            k => Config.FocusCycleKey = k, ref listeningForFocusCycleKey);
+
+        ImGui.Text("Cycle focus key (prev):");
+        ImGui.SameLine();
+        DrawKeyPicker("focuscyclerevkey", Config.FocusCycleReverseKey,
+            k => Config.FocusCycleReverseKey = k, ref listeningForFocusCycleRevKey);
+        ImGui.TextDisabled("  Optional reverse key. Each press steps one party slot.");
+
+        ImGui.Spacing();
+        var focusScroll = Config.FocusScrollOnInteractHold;
+        if (ImGui.Checkbox("Hold interact + scroll to cycle focus", ref focusScroll))
+        {
+            Config.FocusScrollOnInteractHold = focusScroll;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Hold the interact key in the action cam and scroll: the wheel");
+        ImGui.TextDisabled("  cycles the focus instead of zooming (zoom locked, like combat");
+        ImGui.TextDisabled("  cycling). The interact tap then fires on RELEASE so the gesture");
+        ImGui.TextDisabled("  never triggers a stray interact.");
+
+        ImGui.BeginDisabled(!Config.FocusScrollOnInteractHold);
+        var focusInvert = Config.FocusCycleInvertScroll;
+        if (ImGui.Checkbox("Invert focus scroll direction", ref focusInvert))
+        {
+            Config.FocusCycleInvertScroll = focusInvert;
+            Config.Save();
+        }
+        ImGui.EndDisabled();
+
+        var focusSelf = Config.FocusCycleIncludeSelf;
+        if (ImGui.Checkbox("Include self in focus cycle", ref focusSelf))
+        {
+            Config.FocusCycleIncludeSelf = focusSelf;
+            Config.Save();
+        }
+        ImGui.TextDisabled("  Cycle to yourself for self-targeted heals.");
 
         ImGui.Spacing();
         ImGui.Separator();

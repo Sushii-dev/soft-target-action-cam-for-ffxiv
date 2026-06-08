@@ -47,6 +47,7 @@ public sealed class Plugin : IDalamudPlugin
     private readonly DebugOverlay debugOverlay;
     private readonly MouseBindController mouseBindController;
     private readonly TargetCycler targetCycler;
+    private readonly FocusCycler focusCycler;
     private readonly MouseOverSuppressor mouseOverSuppressor;
     private readonly SoftTargetSuppressor softTargetSuppressor;
     private readonly InputStatusSuppressor inputStatusSuppressor;
@@ -75,6 +76,8 @@ public sealed class Plugin : IDalamudPlugin
     private bool clearTargetKeyWasDown;
     private bool hardTargetKeyWasDown;
     private bool interactKeyWasDown;
+    private bool focusCycleKeyWasDown;
+    private bool focusCycleRevKeyWasDown;
     private bool needRollKeyWasDown;
     private bool greedRollKeyWasDown;
     private bool passRollKeyWasDown;
@@ -231,6 +234,15 @@ public sealed class Plugin : IDalamudPlugin
                 finally { hardTargetSuppressor.CancelAllow(); }
             });
 
+        // Focus-target party cycling (healer). Sets FocusTarget directly — no
+        // hard-target suppressor needed (FocusTarget writes never trip the
+        // SetHardTarget hook). Gate funcs mirror the combat cycler.
+        focusCycler = new FocusCycler(
+            Configuration,
+            () => cameraController.IsActive,
+            CameraController.IsGameCursorVisible,
+            IsMenuOpen);
+
         ConfigWindow = new ConfigWindow(this);
         WindowSystem.AddWindow(ConfigWindow);
 
@@ -300,6 +312,7 @@ public sealed class Plugin : IDalamudPlugin
         HandleClearTargetKey(menuOpen);
         HandleHardTargetKey(menuOpen);
         HandleInteractKey();
+        HandleFocusCycleKeys();
         HandleLootRollKeys();
         ReconcileCursorSync();
         HandleGatheringCursor();
@@ -555,6 +568,19 @@ public sealed class Plugin : IDalamudPlugin
         // up. The handler is internally responsible for distinguishing
         // dialogue-advance from world-interact and only firing in scenarios
         // where it knows what to do.
+        // Interact-hold + scroll focus cycling (opt-in). While the interact key
+        // is physically held in the action cam (cursor hidden, no menu), the
+        // wheel cycles the focus target instead of zooming. When this feature
+        // is ON, the interact TAP fires on RELEASE (not press) so a hold+scroll
+        // gesture can cancel the tap cleanly — no stray acquire/toggle/chime at
+        // the start of the gesture. When OFF, behaviour is the original
+        // rising-edge tap, fully ImGui-gated, byte-identical to before.
+        if (Configuration.FocusScrollOnInteractHold)
+        {
+            HandleInteractKeyWithFocusScroll();
+            return;
+        }
+
         var isDown = InputBinding.IsDown(Configuration.InteractKey);
         var rising = isDown && !interactKeyWasDown;
         interactKeyWasDown = isDown;
@@ -570,12 +596,54 @@ public sealed class Plugin : IDalamudPlugin
         // there and the interact key still advances dialogue.
         if (IsGameTextInputActive()) return;
 
-        // Audio feedback differs by outcome:
-        //  - AdvancedDialogue: silent (game plays its own click sounds).
-        //  - Interacted / TargetedFriendly / RodePillion: success chime — the
-        //    moment a fresh target is engaged is otherwise audio-feedback-less.
-        //  - NothingFound: subtle fail tick so the player knows the key
-        //    registered but didn't find anything.
+        FireInteract();
+    }
+
+    /// <summary>
+    /// Interact-key handling when <c>FocusScrollOnInteractHold</c> is enabled.
+    /// Detects the hold+scroll gesture (pins zoom, swallows the wheel, cycles
+    /// the focus) and fires the interact tap on RELEASE — but only if the hold
+    /// did not cycle the focus. Edge + gesture both keyed on the physical
+    /// (raw) key state so they stay consistent; the game text-input gate still
+    /// guards the tap.
+    /// </summary>
+    private void HandleInteractKeyWithFocusScroll()
+    {
+        var key = Configuration.InteractKey;
+        var isDownRaw = InputBinding.IsDownRaw(key);
+
+        var gestureActive = isDownRaw
+            && cameraController.IsActive
+            && !CameraController.IsGameCursorVisible()
+            && !IsMenuOpen();
+
+        if (gestureActive)
+            focusCycler.ScrollTick();
+        else
+            focusCycler.ReleaseZoom();
+
+        var falling = !isDownRaw && interactKeyWasDown;
+        interactKeyWasDown = isDownRaw;
+        if (!falling) return;
+
+        // Hold cycled the focus → it was a scroll gesture, not a tap. Swallow
+        // the interact action (and clear the gesture flag + zoom pin).
+        if (focusCycler.ConsumeHoldDidCycle()) return;
+
+        if (IsGameTextInputActive()) return;
+        FireInteract();
+    }
+
+    /// <summary>
+    /// Run the interact priority chain once and play the matching audio cue.
+    /// Audio feedback differs by outcome:
+    ///  - AdvancedDialogue: silent (game plays its own click sounds).
+    ///  - Interacted / TargetedFriendly / ClearedFocus / RodePillion: success
+    ///    chime — the moment a fresh target is engaged is otherwise feedbackless.
+    ///  - NothingFound: subtle fail tick so the player knows the key registered.
+    /// </summary>
+    private void FireInteract()
+    {
         var result = interactHandler.TryInteract();
         switch (result)
         {
@@ -590,6 +658,33 @@ public sealed class Plugin : IDalamudPlugin
                 break;
             // AdvancedDialogue intentionally falls through silent.
         }
+    }
+
+    /// <summary>
+    /// Dedicated focus-cycle keybinds (<c>FocusCycleKey</c> forward /
+    /// <c>FocusCycleReverseKey</c> backward). Each press steps the focus one
+    /// party slot; no focus → pt1. Camera-independent — works whether or not
+    /// the action cam is active. Edge-triggered, blocked while typing.
+    /// </summary>
+    private void HandleFocusCycleKeys()
+    {
+        FocusCycleKey(Configuration.FocusCycleKey,        ref focusCycleKeyWasDown,    +1);
+        FocusCycleKey(Configuration.FocusCycleReverseKey, ref focusCycleRevKeyWasDown, -1);
+    }
+
+    private void FocusCycleKey(Dalamud.Game.ClientState.Keys.VirtualKey key, ref bool wasDown, int dir)
+    {
+        if (key == Dalamud.Game.ClientState.Keys.VirtualKey.NO_KEY)
+        {
+            wasDown = false;
+            return;
+        }
+        var isDown = InputBinding.IsDown(key);
+        var rising = isDown && !wasDown;
+        wasDown = isDown;
+        if (!rising) return;
+        if (IsGameTextInputActive()) return;
+        focusCycler.Step(dir);
     }
 
     /// <summary>
