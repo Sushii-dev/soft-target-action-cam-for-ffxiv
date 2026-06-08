@@ -641,13 +641,8 @@ public sealed class ConfigWindow : Window, IDisposable
             Config.Save();
         }
 
-        var fStyleIdx = (int)Config.FocusIndicatorStyle;
-        ImGui.SetNextItemWidth(220);
-        if (ImGui.Combo("World style##focus", ref fStyleIdx, IndicatorStyleLabels, IndicatorStyleLabels.Length))
-        {
-            Config.FocusIndicatorStyle = (InteractIndicatorStyle)fStyleIdx;
-            Config.Save();
-        }
+        ImGui.TextDisabled("  World marker = a glowing diamond above the target (its own");
+        ImGui.TextDisabled("  icon, distinct from the interact cue).");
 
         var fColor = Config.FocusIndicatorColor;
         if (ImGui.ColorEdit4("Focus color", ref fColor,

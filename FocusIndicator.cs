@@ -55,10 +55,54 @@ public sealed unsafe class FocusIndicator
         var dl = ImGui.GetForegroundDrawList();
 
         if (config.FocusIndicatorWorld)
-            InteractIndicator.DrawMarker(dl, focus, config.FocusIndicatorStyle, col, emissive, pulse);
+            DrawFocusIcon(dl, focus, col, emissive, pulse);
 
         if (config.FocusIndicatorPartyList)
             DrawPartyListHighlight(dl, focus, col, emissive, pulse);
+    }
+
+    // ── World icon (dedicated focus marker) ──────────────────────────────────
+    //
+    // A glowing diamond floating above the target's head — deliberately NOT one
+    // of the interact indicator's shapes (ring / dot / chevron / brackets) so
+    // the focus marker is its own distinct icon. Same emissive stack (wide glow
+    // passes → dark contour → bright core → hot inner) + breathing pulse so it
+    // reads as one family with the rest of Veiled's cues, just unmistakably
+    // "the focus".
+
+    private static void DrawFocusIcon(ImDrawListPtr dl, IGameObject t, uint col, bool emissive, float pulse)
+    {
+        var head = InteractIndicator.HeadAnchor(t);
+        if (!Plugin.GameGui.WorldToScreen(head, out var screen)) return;
+
+        // Float the diamond a little above the head anchor; breathe its size
+        // gently with the pulse so it pops without being noisy.
+        var c = screen + new Vector2(0f, -20f);
+        var r = 10f * (0.92f + 0.08f * pulse);
+
+        if (emissive)
+        {
+            Diamond(dl, c, r + 7f,   InteractIndicator.WithAlpha(col, 0.10f * pulse), true, 0f);
+            Diamond(dl, c, r + 4f,   InteractIndicator.WithAlpha(col, 0.18f * pulse), true, 0f);
+            Diamond(dl, c, r + 2f,   InteractIndicator.WithAlpha(col, 0.30f * pulse), true, 0f);
+        }
+
+        Diamond(dl, c, r + 1.4f, 0xB0000000u,                       false, 2.2f); // dark contour
+        Diamond(dl, c, r,        InteractIndicator.Brighten(col, 0.45f), true, 0f);   // bright core
+        Diamond(dl, c, r - 3.2f, InteractIndicator.Brighten(col, 0.85f), true, 0f);   // hot center
+    }
+
+    /// <summary>Axis-aligned diamond (rotated square) centred at
+    /// <paramref name="c"/> with half-extent <paramref name="r"/>. Filled, or a
+    /// stroked outline at <paramref name="thickness"/>.</summary>
+    private static void Diamond(ImDrawListPtr dl, Vector2 c, float r, uint col, bool filled, float thickness)
+    {
+        var top    = c + new Vector2(0f, -r);
+        var right   = c + new Vector2(r, 0f);
+        var bottom = c + new Vector2(0f, r);
+        var left   = c + new Vector2(-r, 0f);
+        if (filled) dl.AddQuadFilled(top, right, bottom, left, col);
+        else        dl.AddQuad(top, right, bottom, left, col, thickness);
     }
 
     // ── Party-list row highlight ─────────────────────────────────────────────
@@ -79,6 +123,15 @@ public sealed unsafe class FocusIndicator
         var scale = addon->AtkUnitBase.Scale;
         var min = new Vector2(node->ScreenX, node->ScreenY);
         var max = min + new Vector2(node->Width * scale, node->Height * scale);
+
+        // The collision node is a bit larger than the visible row (hit-area
+        // padding) and runs to the panel edge, so the raw rect blooms past the
+        // row and clips the panel. Inset it so the border hugs the row content.
+        var insetX = 4f * scale;
+        var insetY = 3f * scale;
+        min += new Vector2(insetX, insetY);
+        max -= new Vector2(insetX, insetY);
+        if (max.X <= min.X || max.Y <= min.Y) return;
 
         DrawEmissiveRect(dl, min, max, col, emissive, pulse);
     }
@@ -132,22 +185,24 @@ public sealed unsafe class FocusIndicator
 
     private static void DrawEmissiveRect(ImDrawListPtr dl, Vector2 min, Vector2 max, uint col, bool emissive, float pulse)
     {
-        const float rounding = 5f;
+        const float rounding = 4f;
         const ImDrawFlags flags = ImDrawFlags.RoundCornersAll;
 
+        // Glow grows INWARD-biased (small outward expansion) so it never blooms
+        // past the row / panel edge like the first cut did.
         if (emissive)
         {
-            dl.AddRect(min - new Vector2(4f), max + new Vector2(4f), InteractIndicator.WithAlpha(col, 0.10f * pulse), rounding + 4f, flags, 7f);
-            dl.AddRect(min - new Vector2(2.5f), max + new Vector2(2.5f), InteractIndicator.WithAlpha(col, 0.18f * pulse), rounding + 2.5f, flags, 5f);
-            dl.AddRect(min - new Vector2(1f), max + new Vector2(1f), InteractIndicator.WithAlpha(col, 0.30f * pulse), rounding + 1f, flags, 3f);
+            dl.AddRect(min - new Vector2(1.5f), max + new Vector2(1.5f), InteractIndicator.WithAlpha(col, 0.16f * pulse), rounding + 1.5f, flags, 4f);
+            dl.AddRect(min - new Vector2(0.5f), max + new Vector2(0.5f), InteractIndicator.WithAlpha(col, 0.28f * pulse), rounding + 0.5f, flags, 2.5f);
         }
 
-        dl.AddRect(min, max, 0xB0000000u, rounding, flags, 2.4f);                       // dark contour
-        dl.AddRect(min, max, InteractIndicator.Brighten(col, 0.45f), rounding, flags, 2.0f); // bright core
+        dl.AddRect(min, max, 0xB0000000u, rounding, flags, 2.0f);                       // dark contour
+        dl.AddRect(min, max, InteractIndicator.Brighten(col, 0.45f), rounding, flags, 1.6f); // bright core
         dl.AddRect(min, max, InteractIndicator.Brighten(col, 0.85f), rounding, flags, 1.0f); // hot inner
 
-        // Bright left-edge bar — the at-a-glance "this row" cue.
+        // Bright left-edge bar — the at-a-glance "this row" cue (kept inside the
+        // inset rect so it doesn't add to the width).
         var barCol = InteractIndicator.Brighten(col, 0.55f);
-        dl.AddRectFilled(new Vector2(min.X - 3f, min.Y), new Vector2(min.X, max.Y), barCol, 1.5f);
+        dl.AddRectFilled(new Vector2(min.X, min.Y), new Vector2(min.X + 2.5f, max.Y), barCol, 1.5f);
     }
 }

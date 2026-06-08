@@ -386,7 +386,7 @@ public sealed class InteractIndicator
     /// enough for an indicator that lives in screen space and won't be
     /// scrutinised against the geometry.
     /// </summary>
-    private static Vector3 HeadAnchor(Dalamud.Game.ClientState.Objects.Types.IGameObject t)
+    internal static Vector3 HeadAnchor(Dalamud.Game.ClientState.Objects.Types.IGameObject t)
     {
         var feet = t.Position;
         // 2.2y default + 0.7×hitbox radius. NPCs and players alike fall in
