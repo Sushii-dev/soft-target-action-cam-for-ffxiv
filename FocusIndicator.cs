@@ -188,13 +188,13 @@ public sealed unsafe class FocusIndicator
         const float rounding = 4f;
 
         // Translucent row tint — text renders through it.
-        dl.AddRectFilled(min, max, InteractIndicator.WithAlpha(col, 0.14f * pulse), rounding);
+        dl.AddRectFilled(min, max, InteractIndicator.WithAlpha(col, 0.26f * pulse), rounding);
 
         // Bright glowing left-edge bar.
-        const float barW = 4f;
+        const float barW = 5f;
         if (emissive)
-            dl.AddRectFilled(new Vector2(min.X - 2f, min.Y), new Vector2(min.X + barW + 1f, max.Y),
-                InteractIndicator.WithAlpha(col, 0.30f * pulse), 2f);
+            dl.AddRectFilled(new Vector2(min.X - 3f, min.Y), new Vector2(min.X + barW + 2f, max.Y),
+                InteractIndicator.WithAlpha(col, 0.45f * pulse), 2f);
 
         dl.AddRectFilled(new Vector2(min.X, min.Y), new Vector2(min.X + barW, max.Y),
             InteractIndicator.Brighten(col, 0.55f), 2f);
